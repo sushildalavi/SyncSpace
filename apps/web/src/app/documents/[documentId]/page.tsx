@@ -43,6 +43,14 @@ export default function DocumentPage() {
             <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-300">
               Write the doc, align the team, and publish the important parts to Slack or Teams without leaving the workspace.
             </p>
+            <div className="mt-5 flex flex-wrap items-center gap-2">
+              <span className="pill border-white/10 bg-white/5 text-slate-200">Version {document.data?.currentVersion ?? "—"}</span>
+              {workspaceId ? (
+                <Link href={`/documents/${params.documentId}/history`} className="pill border-white/10 bg-cyan-400/10 text-cyan-100">
+                  View history
+                </Link>
+              ) : null}
+            </div>
           </div>
           {workspaceId ? (
             <CollaborativeEditor documentId={params.documentId} workspaceId={workspaceId} />

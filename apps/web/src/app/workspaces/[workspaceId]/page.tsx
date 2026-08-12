@@ -13,6 +13,8 @@ export default function WorkspacePage() {
   const { token } = useAuth();
   const workspace = useWorkspace(token, params.workspaceId);
   const documents = useDocuments(token, params.workspaceId);
+  const docCount = documents.data?.length ?? 0;
+  const latestVersion = documents.data?.reduce((max, doc) => Math.max(max, doc.currentVersion), 0) ?? 0;
 
   return (
     <main className="relative min-h-screen overflow-hidden px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
@@ -52,6 +54,11 @@ export default function WorkspacePage() {
                 Configure Slack / Teams
               </Link>
             </div>
+            <div className="mt-6 grid gap-3 sm:grid-cols-3">
+              <Stat label="Documents" value={docCount.toString()} />
+              <Stat label="Latest version" value={latestVersion.toString()} />
+              <Stat label="Workflow" value="Docs → actions" />
+            </div>
           </motion.div>
 
           <motion.aside initial={false} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: 0.05 }} className="surface-strong p-6">
@@ -80,5 +87,14 @@ export default function WorkspacePage() {
         </section>
       </div>
     </main>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+      <p className="text-[10px] uppercase tracking-[0.26em] text-slate-500">{label}</p>
+      <p className="mt-1 text-sm font-semibold text-white">{value}</p>
+    </div>
   );
 }

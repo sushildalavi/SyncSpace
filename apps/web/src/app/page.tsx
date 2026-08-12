@@ -24,6 +24,11 @@ export default function Page() {
             <Feature title="Decision memory" text="Capture decisions, action items, and history without extra busywork." />
             <Feature title="Offline-safe sync" text="Pending updates survive reconnects and continue when the network returns." />
           </div>
+          <div className="mt-8 grid gap-3 sm:grid-cols-3">
+            <Stat label="Mode" value="Focus first" />
+            <Stat label="Channels" value="Slack + Teams" />
+            <Stat label="Memory" value="Versioned docs" />
+          </div>
         </motion.section>
 
         <motion.div initial={false} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.45, delay: 0.05 }}>
@@ -39,6 +44,15 @@ function Feature({ title, text }: { title: string; text: string }) {
     <div className="rounded-2xl border border-white/10 bg-slate-950/45 p-5">
       <p className="font-medium text-white">{title}</p>
       <p className="mt-2 leading-6 text-slate-400">{text}</p>
+    </div>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+      <p className="text-[10px] uppercase tracking-[0.26em] text-slate-500">{label}</p>
+      <p className="mt-1 text-sm font-semibold text-white">{value}</p>
     </div>
   );
 }
