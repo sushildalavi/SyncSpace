@@ -1,0 +1,43 @@
+services:
+  mongo:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+
+  api:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/api.Dockerfile
+    environment:
+      DATABASE_URL: mongodb://mongo:27017/syncspace
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: replace-me-with-a-long-random-string
+      JWT_EXPIRES_IN: 1d
+      API_PORT: 3001
+    depends_on:
+      - mongo
+      - redis
+    ports:
+      - "3001:3001"
+
+  web:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/web.Dockerfile
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: http://api:3001
+      WEB_PORT: 3000
+    depends_on:
+      - api
+    ports:
+      - "3000:3000"
+
+volumes:
+  mongo_data:
