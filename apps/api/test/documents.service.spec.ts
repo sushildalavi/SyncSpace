@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
+
+vi.mock("../src/shared/app-env.js", () => ({
+  APP_ENV: Symbol("APP_ENV")
+}));
+
 import { DocumentsService } from "../src/documents/documents.service.js";
 
 describe("DocumentsService", () => {

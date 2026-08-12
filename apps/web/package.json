@@ -9,7 +9,7 @@
     "start": "next start -p 3000",
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run src/lib/api.test.ts"
   },
   "dependencies": {
     "@syncspace/contracts": "workspace:*",
