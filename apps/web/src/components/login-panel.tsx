@@ -40,16 +40,16 @@ export function LoginPanel() {
   }
 
   return (
-    <aside className="rounded-3xl border border-white/10 bg-slate-950/80 p-8 shadow-glow">
+    <aside className="surface-strong p-6 sm:p-8">
       <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 p-1 text-sm">
         <button
-          className={`rounded-full px-4 py-2 ${mode === "register" ? "bg-cyan-400 text-slate-950" : "text-slate-300"}`}
+          className={`rounded-full px-4 py-2 transition ${mode === "register" ? "bg-cyan-400 text-slate-950" : "text-slate-300 hover:bg-white/5"}`}
           onClick={() => setMode("register")}
         >
           Create account
         </button>
         <button
-          className={`rounded-full px-4 py-2 ${mode === "login" ? "bg-cyan-400 text-slate-950" : "text-slate-300"}`}
+          className={`rounded-full px-4 py-2 transition ${mode === "login" ? "bg-cyan-400 text-slate-950" : "text-slate-300 hover:bg-white/5"}`}
           onClick={() => setMode("login")}
         >
           Sign in
@@ -64,15 +64,30 @@ export function LoginPanel() {
         <input className="field" type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Password" />
       </div>
 
-      {error ? <p className="mt-4 text-sm text-rose-300">{error}</p> : null}
+      {error ? <p className="mt-4 text-sm text-rose-300">{error}</p> : <p className="mt-4 text-sm text-slate-400">Use one account to keep your workspace, docs, and integrations together.</p>}
 
       <button
-        className="mt-6 w-full rounded-2xl bg-cyan-400 px-4 py-3 font-semibold text-slate-950 transition hover:bg-cyan-300 disabled:opacity-60"
+        className="btn-primary mt-6 w-full"
         onClick={submit}
         disabled={busy}
       >
         {busy ? "Working..." : mode === "register" ? "Create workspace account" : "Sign in"}
       </button>
+
+      <div className="mt-6 grid grid-cols-3 gap-3 text-xs text-slate-300">
+        <MiniStat label="Docs" value="Live" />
+        <MiniStat label="Slack" value="Ready" />
+        <MiniStat label="Teams" value="Ready" />
+      </div>
     </aside>
+  );
+}
+
+function MiniStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-center">
+      <p className="text-[10px] uppercase tracking-[0.26em] text-slate-500">{label}</p>
+      <p className="mt-1 text-sm font-semibold text-white">{value}</p>
+    </div>
   );
 }

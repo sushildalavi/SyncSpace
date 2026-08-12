@@ -17,6 +17,8 @@ body {
 
 body {
   color: #e2e8f0;
+  position: relative;
+  overflow-x: hidden;
 }
 
 * {
@@ -30,4 +32,40 @@ a {
 
 ::selection {
   background: rgba(56, 189, 248, 0.35);
+}
+
+.surface {
+  @apply rounded-[28px] border border-white/10 bg-white/5 shadow-[0_24px_80px_rgba(2,6,23,0.35)] backdrop-blur-xl;
+}
+
+.surface-strong {
+  @apply rounded-[28px] border border-white/10 bg-slate-950/90 shadow-[0_24px_100px_rgba(2,6,23,0.55)] backdrop-blur-xl;
+}
+
+.paper {
+  @apply rounded-[28px] border border-slate-200/80 bg-[#f8fafc] text-slate-900 shadow-[0_24px_90px_rgba(15,23,42,0.22)];
+}
+
+.field {
+  @apply w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-cyan-300/60 focus:ring-2 focus:ring-cyan-300/20;
+}
+
+.field-light {
+  @apply w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-200;
+}
+
+.btn-primary {
+  @apply inline-flex items-center justify-center rounded-2xl bg-cyan-400 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300 disabled:opacity-60;
+}
+
+.btn-secondary {
+  @apply inline-flex items-center justify-center rounded-2xl border border-white/10 px-4 py-3 text-sm font-medium text-slate-200 transition hover:bg-white/5;
+}
+
+.pill {
+  @apply inline-flex items-center rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-slate-200;
+}
+
+.glass-nav {
+  @apply rounded-full border border-white/10 bg-slate-950/60 px-2 py-2 shadow-[0_12px_40px_rgba(2,6,23,0.28)] backdrop-blur-xl;
 }
