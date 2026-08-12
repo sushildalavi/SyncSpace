@@ -6,6 +6,7 @@ import {
   DocumentUpdateSchema,
   SessionSchema,
   UserSchema,
+  WorkspaceIntegrationSchema,
   WorkspaceMembershipSchema,
   WorkspaceSchema,
   type DocumentRecord,
@@ -13,6 +14,7 @@ import {
   type DocumentUpdateRecord,
   type SessionRecord,
   type UserRecord,
+  type WorkspaceIntegrationRecord,
   type WorkspaceMembershipRecord,
   type WorkspaceRecord
 } from "./schemas.js";
@@ -23,6 +25,7 @@ export type DatabaseModels = {
   users: Model<UserRecord>;
   workspaces: Model<WorkspaceRecord>;
   memberships: Model<WorkspaceMembershipRecord>;
+  integrations: Model<WorkspaceIntegrationRecord>;
   documents: Model<DocumentRecord>;
   snapshots: Model<DocumentSnapshotRecord>;
   updates: Model<DocumentUpdateRecord>;
@@ -57,6 +60,7 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
       users: this.connection.model("User", UserSchema),
       workspaces: this.connection.model("Workspace", WorkspaceSchema),
       memberships: this.connection.model("WorkspaceMembership", WorkspaceMembershipSchema),
+      integrations: this.connection.model("WorkspaceIntegration", WorkspaceIntegrationSchema),
       documents: this.connection.model("Document", DocumentSchema),
       snapshots: this.connection.model("DocumentSnapshot", DocumentSnapshotSchema),
       updates: this.connection.model("DocumentUpdate", DocumentUpdateSchema),

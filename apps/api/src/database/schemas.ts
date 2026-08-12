@@ -49,6 +49,25 @@ WorkspaceMembershipSchema.index({ userId: 1, role: 1 });
 
 export type WorkspaceMembershipRecord = InferSchemaType<typeof WorkspaceMembershipSchema> & { _id: string };
 
+export const WorkspaceIntegrationSchema = new Schema(
+  {
+    _id: id,
+    workspaceId: { type: String, required: true, index: true },
+    provider: { type: String, required: true, enum: ["slack", "teams"] },
+    name: { type: String, required: true, trim: true },
+    webhookUrl: { type: String, required: true, trim: true },
+    enabled: { type: Boolean, required: true, default: true },
+    createdBy: { type: String, required: true },
+    updatedBy: { type: String, required: true }
+  },
+  { timestamps: true, versionKey: false }
+);
+
+WorkspaceIntegrationSchema.index({ workspaceId: 1, provider: 1 }, { unique: true });
+WorkspaceIntegrationSchema.index({ workspaceId: 1, enabled: 1 });
+
+export type WorkspaceIntegrationRecord = InferSchemaType<typeof WorkspaceIntegrationSchema> & { _id: string };
+
 export const DocumentSchema = new Schema(
   {
     _id: id,
