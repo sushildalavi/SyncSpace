@@ -23,7 +23,7 @@ async function bootstrap(): Promise<void> {
 
   const env = app.get(APP_ENV);
   app.enableCors({
-    origin: env.NEXT_PUBLIC_API_BASE_URL,
+    origin: env.WEB_ORIGIN,
     credentials: true
   });
 

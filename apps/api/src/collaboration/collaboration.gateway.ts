@@ -1,3 +1,4 @@
+import { Inject } from "@nestjs/common";
 import {
   ConnectedSocket,
   MessageBody,
@@ -12,7 +13,7 @@ import { CollaborationService } from "./collaboration.service.js";
 
 @WebSocketGateway({ path: "/collaboration" })
 export class CollaborationGateway implements OnGatewayConnection, OnGatewayDisconnect {
-  constructor(private readonly collaborationService: CollaborationService) {}
+  constructor(@Inject(CollaborationService) private readonly collaborationService: CollaborationService) {}
 
   handleConnection(client: WebSocket, request: IncomingMessage): void {
     void this.collaborationService.handleConnection(client, request);

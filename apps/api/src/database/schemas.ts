@@ -133,12 +133,10 @@ export const SessionSchema = new Schema(
     _id: id,
     userId: { type: String, required: true, index: true },
     jti: { type: String, required: true, unique: true, index: true },
-    expiresAt: { type: Date, required: true, index: true },
+    expiresAt: { type: Date, required: true },
     revokedAt: { type: Date, required: false }
   },
   { timestamps: true, versionKey: false }
 );
-
-SessionSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
 export type SessionRecord = InferSchemaType<typeof SessionSchema> & { _id: string };

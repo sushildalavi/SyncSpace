@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post, Put, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Inject, Param, Post, Put, UseGuards } from "@nestjs/common";
 import { CurrentUser } from "../common/current-user.decorator.js";
 import { JwtAuthGuard } from "../common/jwt-auth.guard.js";
 import { WorkspaceRoles } from "../common/roles.decorator.js";
@@ -9,7 +9,7 @@ import { WorkspacesService } from "./workspaces.service.js";
 @Controller("workspaces")
 @UseGuards(JwtAuthGuard)
 export class WorkspacesController {
-  constructor(private readonly workspacesService: WorkspacesService) {}
+  constructor(@Inject(WorkspacesService) private readonly workspacesService: WorkspacesService) {}
 
   @Get()
   list(@CurrentUser() user: { id: string }) {

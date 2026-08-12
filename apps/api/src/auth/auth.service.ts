@@ -8,7 +8,7 @@ import type { AuthenticatedUser } from "../common/current-user.decorator.js";
 @Injectable()
 export class AuthService {
   constructor(
-    private readonly database: DatabaseService,
+    @Inject(DatabaseService) private readonly database: DatabaseService,
     @Inject(APP_ENV) private readonly env: { JWT_SECRET: string; JWT_EXPIRES_IN: string }
   ) {}
 

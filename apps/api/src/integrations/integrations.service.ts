@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { Injectable, NotFoundException, Inject } from "@nestjs/common";
 import { DatabaseService } from "../database/database.service.js";
 import { WorkspacesService } from "../workspaces/workspaces.service.js";
 
@@ -7,8 +7,8 @@ type UserContext = { id: string; email: string; displayName: string };
 @Injectable()
 export class IntegrationsService {
   constructor(
-    private readonly database: DatabaseService,
-    private readonly workspacesService: WorkspacesService
+    @Inject(DatabaseService) private readonly database: DatabaseService,
+    @Inject(WorkspacesService) private readonly workspacesService: WorkspacesService
   ) {}
 
   async listForWorkspace(workspaceId: string, userId: string) {

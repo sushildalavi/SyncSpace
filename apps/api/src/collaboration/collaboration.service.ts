@@ -57,9 +57,9 @@ export class CollaborationService implements OnModuleInit, OnModuleDestroy {
   private polling = true;
 
   constructor(
-    private readonly database: DatabaseService,
-    private readonly documentsService: DocumentsService,
-    private readonly redis: RedisService,
+    @Inject(DatabaseService) private readonly database: DatabaseService,
+    @Inject(DocumentsService) private readonly documentsService: DocumentsService,
+    @Inject(RedisService) private readonly redis: RedisService,
     @Inject(APP_ENV) private readonly env: { REDIS_URL: string; JWT_SECRET: string }
   ) {}
 

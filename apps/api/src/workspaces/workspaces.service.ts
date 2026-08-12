@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { ForbiddenException, Injectable, NotFoundException, Inject } from "@nestjs/common";
 import { DatabaseService } from "../database/database.service.js";
 import type { WorkspaceRole } from "@syncspace/contracts";
 
@@ -6,7 +6,7 @@ type UserContext = { id: string; email: string; displayName: string };
 
 @Injectable()
 export class WorkspacesService {
-  constructor(private readonly database: DatabaseService) {}
+  constructor(@Inject(DatabaseService) private readonly database: DatabaseService) {}
 
   async listForUser(userId: string) {
     const memberships = await this.database.models.memberships.find({ userId }).lean();

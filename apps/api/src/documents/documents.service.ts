@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { ForbiddenException, Injectable, NotFoundException, Inject } from "@nestjs/common";
 import { createHash } from "crypto";
 import { DatabaseService } from "../database/database.service.js";
 import { WorkspacesService } from "../workspaces/workspaces.service.js";
@@ -10,8 +10,8 @@ export class DocumentsService {
   private readonly snapshotThreshold = 25;
 
   constructor(
-    private readonly database: DatabaseService,
-    private readonly workspacesService: WorkspacesService
+    @Inject(DatabaseService) private readonly database: DatabaseService,
+    @Inject(WorkspacesService) private readonly workspacesService: WorkspacesService
   ) {}
 
   async list(workspaceId: string, userId: string) {
