@@ -1,21 +1,29 @@
 # SyncSpace
 
-SyncSpace is a production-oriented collaborative workspace for real-time document editing, workspace membership, and versioned history. It uses Next.js for the web app, NestJS for the API and collaboration gateway, MongoDB for persistence, Redis Streams for cross-instance fanout, and Yjs for conflict-free document synchronization.
+SyncSpace is a real-time collaborative workspace for teams that need live editing, reliable history, and a straightforward path from local development to production.
 
-## What it ships
+It combines a Next.js frontend, a NestJS API, MongoDB for persistence, Redis Streams for fanout, and Yjs for conflict-free collaboration.
 
-- authenticated workspaces and membership-based access control
-- live collaborative editing with websocket transport
-- offline-friendly client state and queued updates
-- document history and version snapshots
-- shared contracts across web, API, and sync packages
-- end-to-end verification with unit, integration, and browser coverage
+## Why it exists
 
-## System overview
+Collaborative tools tend to split into two awkward extremes: fast demos that fall apart under real use, or heavy systems that are painful to run and harder to trust.
+
+SyncSpace is meant to sit in the middle. It is built to be understandable, testable, and ready for multi-user editing without hiding the hard parts.
+
+## What’s included
+
+- authenticated workspaces with server-enforced access control
+- live document editing over websockets
+- versioned history and snapshotting
+- offline-safe client queuing
+- shared contracts across the web app, API, and collaboration utilities
+- unit, integration, and browser coverage
+
+## How it fits together
 
 ```mermaid
 flowchart LR
-  Browser["Browser"] --> Web["Next.js web app"]
+  Browser["Browser"] --> Web["Next.js app"]
   Web -->|REST| API["NestJS API"]
   Web -->|WebSocket| API
   API --> Mongo[(MongoDB)]
@@ -24,7 +32,7 @@ flowchart LR
   Redis --> API
 ```
 
-## Collaboration lifecycle
+## Collaboration flow
 
 ```mermaid
 sequenceDiagram
@@ -36,34 +44,34 @@ sequenceDiagram
   participant R as Redis
 
   U->>W: Open a document
-  W->>A: Fetch document metadata
-  W->>A: Open websocket with token
-  A->>M: Validate membership and load snapshot
-  A-->>W: Send snapshot + presence
-  U->>W: Edit text
+  W->>A: Fetch metadata
+  W->>A: Open websocket session
+  A->>M: Validate membership and load state
+  A-->>W: Send snapshot and presence
+  U->>W: Edit content
   W->>A: Send Yjs update
-  A->>M: Persist update and bump version
+  A->>M: Persist update and version
   A->>R: Publish update event
-  R-->>A: Fanout to connected peers
-  A-->>W: Broadcast collaborative update
+  R-->>A: Fan out to other connections
+  A-->>W: Broadcast the change
 ```
 
-## Repository layout
+## Repository structure
 
 ```text
 apps/
-  api/        NestJS REST + websocket gateway
-  web/        Next.js client
-  loadtest/   Collaboration load harness
+  api/        backend API and collaboration gateway
+  web/        frontend application
+  loadtest/   collaboration load harness
 packages/
-  collaboration/ CRDT helpers and policy
-  config/         shared env parsing
-  contracts/      shared zod contracts
-docs/         architecture, API, benchmarks, failure modes
-infrastructure/ Dockerfiles for web and api
+  collaboration/ CRDT helpers and sync policy
+  config/         shared environment parsing
+  contracts/      shared validation contracts
+infrastructure/
+  docker/      production Dockerfiles
 ```
 
-## Local development
+## Running locally
 
 ### Prerequisites
 
@@ -81,6 +89,8 @@ docker compose up -d
 pnpm dev
 ```
 
+Then open the web app and API using the ports defined in `.env`.
+
 ### Useful commands
 
 ```bash
@@ -91,19 +101,16 @@ pnpm test:e2e
 pnpm build
 ```
 
-## Quality gates
+## Production notes
 
-The repository is wired for a full verification pass:
+- The API owns authentication and membership checks.
+- Collaboration updates are normalized server-side before persistence.
+- Redis Streams lets multiple API instances stay in sync.
+- The client keeps local edits moving even when the connection is unstable.
 
-- linting with a shared ESLint config
-- TypeScript typechecking across the workspace
-- API service tests
-- browser coverage for the collaborative editor flow
-- documented architecture and failure modes
+## Environment variables
 
-## Environment
-
-Copy `.env.example` to `.env` and provide the values for:
+Copy `.env.example` to `.env` and fill in the values for:
 
 - `DATABASE_URL`
 - `REDIS_URL`
@@ -111,21 +118,12 @@ Copy `.env.example` to `.env` and provide the values for:
 - `JWT_EXPIRES_IN`
 - `NEXT_PUBLIC_API_BASE_URL`
 
-## Production notes
+## Quality gates
 
-- The API owns authentication and membership checks.
-- Collaboration updates are normalized server-side before persistence.
-- Redis Streams is used so multiple API instances can coordinate the same document.
-- The web client is designed to survive reconnects and offline pauses without dropping local edits.
+The repository is set up to verify the important paths before release:
 
-## Documentation
-
-- [Architecture overview](docs/architecture/overview.md)
-- [MongoDB data model](docs/data-model/mongodb.md)
-- [REST API](docs/api/rest.md)
-- [WebSocket protocol](docs/api/websockets.md)
-- [Failure modes](docs/failure-modes.md)
-- [Testing guide](docs/testing.md)
-- [Benchmark methodology](docs/benchmarks/methodology.md)
-- [ADR: Yjs collaboration](docs/adr/0001-yjs-collaboration.md)
+- linting
+- type checking
+- API service tests
+- browser-level editor coverage
 
