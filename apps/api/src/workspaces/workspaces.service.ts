@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { DatabaseService } from "../database/database.service.js";
 import type { WorkspaceRole } from "@syncspace/contracts";
 

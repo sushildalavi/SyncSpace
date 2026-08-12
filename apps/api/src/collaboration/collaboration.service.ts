@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
-import { randomUUID, createHash } from "crypto";
+import { randomUUID } from "crypto";
 import { IncomingMessage } from "http";
 import { WebSocket } from "ws";
 import jwt from "jsonwebtoken";
@@ -9,8 +9,6 @@ import { DatabaseService } from "../database/database.service.js";
 import { DocumentsService } from "../documents/documents.service.js";
 import { RedisService } from "../redis/redis.service.js";
 import { APP_ENV } from "../shared/app-env.js";
-import { WorkspaceRoleGuard } from "../common/workspace-role.guard.js";
-import { WorkspaceRoles } from "../common/roles.decorator.js";
 
 type SocketContext = {
   userId: string;
@@ -177,11 +175,15 @@ export class CollaborationService implements OnModuleInit, OnModuleDestroy {
     }
 
     const update = parsed.data;
+    if (update.documentId !== context.documentId) {
+      client.send(JSON.stringify({ type: "error", message: "Document mismatch" }));
+      return;
+    }
     const buffer = Buffer.from(update.payload, "base64");
     const persistResult = await this.documentsService.persistUpdate({
       documentId: update.documentId,
-      workspaceId: update.workspaceId,
-      actorId: update.actorId,
+      workspaceId: context.workspaceId,
+      actorId: context.userId,
       clientId: update.clientId,
       updateId: update.updateId,
       baseVersion: update.baseVersion,
@@ -208,9 +210,9 @@ export class CollaborationService implements OnModuleInit, OnModuleDestroy {
         eventId: randomUUID(),
         eventType: "document.update",
         sourceInstanceId: this.instanceId,
-        documentId: update.documentId,
-        workspaceId: update.workspaceId,
-        actorId: update.actorId,
+        documentId: context.documentId,
+        workspaceId: context.workspaceId,
+        actorId: context.userId,
         clientId: update.clientId,
         updateId: update.updateId,
         version: update.version,
@@ -220,12 +222,12 @@ export class CollaborationService implements OnModuleInit, OnModuleDestroy {
       } satisfies UpdateEnvelope)
     );
 
-    this.broadcastToDocument(update.documentId, {
+    this.broadcastToDocument(context.documentId, {
       type: "document.update",
       payload: update
     }, client);
 
-    await this.documentsService.snapshotIfNeeded(update.documentId);
+    await this.documentsService.snapshotIfNeeded(context.documentId);
   }
 
   private async processPresenceUpdate(context: SocketContext, payload: unknown): Promise<void> {
@@ -236,7 +238,14 @@ export class CollaborationService implements OnModuleInit, OnModuleDestroy {
 
     const presence = parsed.data;
     const key = this.presenceKey(context.documentId, context.userId);
-    await this.redis.publishPresence(key, JSON.stringify(presence), 30);
+    const normalizedPresence = {
+      ...presence,
+      documentId: context.documentId,
+      workspaceId: context.workspaceId,
+      userId: context.userId,
+      userName: context.userName
+    };
+    await this.redis.publishPresence(key, JSON.stringify(normalizedPresence), 30);
     await this.redis.xadd(
       "syncspace:stream:presence",
       "MAXLEN",
@@ -247,11 +256,11 @@ export class CollaborationService implements OnModuleInit, OnModuleDestroy {
       JSON.stringify({
         eventType: "presence.update",
         sourceInstanceId: this.instanceId,
-        ...presence,
-        eventId: presence.eventId
+        ...normalizedPresence,
+        eventId: normalizedPresence.eventId
       } satisfies PresenceEnvelope)
     );
-    this.broadcastToDocument(context.documentId, { type: "presence.update", payload: presence });
+    this.broadcastToDocument(context.documentId, { type: "presence.update", payload: normalizedPresence });
   }
 
   private async consumeDocumentUpdates(): Promise<void> {

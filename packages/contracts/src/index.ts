@@ -34,8 +34,6 @@ export type DocumentCreateInput = z.infer<typeof DocumentCreateSchema>;
 export const CollaborationUpdateSchema = z.object({
   eventId: z.string().min(1),
   documentId: z.string().min(1),
-  workspaceId: z.string().min(1),
-  actorId: z.string().min(1),
   clientId: z.string().min(1),
   updateId: z.string().min(1),
   version: z.number().int().nonnegative(),

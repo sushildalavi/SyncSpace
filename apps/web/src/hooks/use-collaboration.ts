@@ -17,7 +17,6 @@ type CollaborationParams = {
   workspaceId: string;
   token: string | null;
   actorId: string;
-  userName: string;
 };
 
 type QueueItem = {
@@ -27,7 +26,7 @@ type QueueItem = {
 
 const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001";
 
-export function useCollaboration({ documentId, workspaceId, token, actorId, userName }: CollaborationParams) {
+export function useCollaboration({ documentId, workspaceId, token, actorId }: CollaborationParams) {
   const socketRef = useRef<WebSocket | null>(null);
   const docRef = useRef<Y.Doc>(new Y.Doc());
   const textRef = useRef<Y.Text>(docRef.current.getText("body"));
@@ -70,8 +69,6 @@ export function useCollaboration({ documentId, workspaceId, token, actorId, user
         payload: {
           eventId: crypto.randomUUID(),
           documentId,
-          workspaceId,
-          actorId,
           clientId: queueName,
           updateId: crypto.randomUUID(),
           version: currentVersion + 1,

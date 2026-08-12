@@ -2,7 +2,7 @@ import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/commo
 import { createHash } from "crypto";
 import { DatabaseService } from "../database/database.service.js";
 import { WorkspacesService } from "../workspaces/workspaces.service.js";
-import { createYDoc, applyDocumentUpdate, encodeDocumentState, mergeDocumentUpdates } from "@syncspace/collaboration";
+import { createYDoc, applyDocumentUpdate, encodeDocumentState } from "@syncspace/collaboration";
 import * as Y from "yjs";
 
 @Injectable()

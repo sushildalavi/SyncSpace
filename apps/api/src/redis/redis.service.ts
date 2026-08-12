@@ -1,12 +1,17 @@
 import { Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
-import IORedis from "ioredis";
+import Redis, { type Redis as RedisClient } from "ioredis";
 import { APP_ENV } from "../shared/app-env.js";
+
+const RedisCtor = Redis as unknown as new (
+  url: string,
+  options?: { maxRetriesPerRequest?: number | null }
+) => RedisClient;
 
 @Injectable()
 export class RedisService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(RedisService.name);
-  private client?: any;
-  private subscriber?: any;
+  private client?: RedisClient;
+  private subscriber?: RedisClient;
 
   constructor(@Inject(APP_ENV) private readonly env: { REDIS_URL: string }) {}
 
@@ -23,18 +28,12 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    this.client = new (IORedis as unknown as new (url: string, options: Record<string, unknown>) => any)(
-      this.env.REDIS_URL,
-      { maxRetriesPerRequest: null }
-    );
-    this.subscriber = new (IORedis as unknown as new (url: string, options: Record<string, unknown>) => any)(
-      this.env.REDIS_URL,
-      { maxRetriesPerRequest: null }
-    );
+    this.client = new RedisCtor(this.env.REDIS_URL, { maxRetriesPerRequest: null });
+    this.subscriber = new RedisCtor(this.env.REDIS_URL, { maxRetriesPerRequest: null });
     this.logger.log("Redis connected");
   }
 
-  get commands(): any {
+  get commands(): RedisClient {
     if (!this.client) {
       throw new Error("Redis client not ready");
     }
@@ -42,7 +41,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   }
 
   async xadd(stream: string, ...args: string[]): Promise<string> {
-    return this.commands.xadd(stream, ...args);
+    return (await this.commands.xadd(stream, ...args)) as string;
   }
 
   async publishPresence(key: string, value: string, ttlSeconds: number): Promise<void> {

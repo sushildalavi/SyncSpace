@@ -8,6 +8,15 @@ importers:
 
   .:
     devDependencies:
+      '@eslint/js':
+        specifier: ^9.34.0
+        version: 9.39.5
+      '@typescript-eslint/eslint-plugin':
+        specifier: ^8.40.0
+        version: 8.67.0(@typescript-eslint/parser@8.67.0(eslint@9.39.5(jiti@1.21.7)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@5.9.3))(eslint@9.39.5(jiti@1.21.7)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@5.9.3)
+      '@typescript-eslint/parser':
+        specifier: ^8.40.0
+        version: 8.67.0(eslint@9.39.5(jiti@1.21.7)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@5.9.3)
       prettier:
         specifier: ^3.5.3
         version: 3.9.6

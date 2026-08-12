@@ -11,8 +11,7 @@ export function CollaborativeEditor({ documentId, workspaceId }: { documentId: s
     documentId,
     workspaceId,
     token,
-    actorId: user?.id ?? "",
-    userName: user?.displayName ?? "Anonymous"
+    actorId: user?.id ?? ""
   });
   const [localText, setLocalText] = useState(text);
 
