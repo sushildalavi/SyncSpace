@@ -19,12 +19,7 @@ export default function DocumentPage() {
       <HaikeiBackdrop />
 
       <div className="relative mx-auto flex min-h-[calc(100vh-2rem)] max-w-[1600px] flex-col gap-4">
-        <motion.header
-          initial={{ opacity: 0, y: -8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.35, ease: "easeOut" }}
-          className="glass-nav flex flex-wrap items-center justify-between gap-3"
-        >
+        <motion.header initial={false} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, ease: "easeOut" }} className="glass-nav flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-3">
             {workspaceId ? (
               <Link href={`/workspaces/${workspaceId}`} className="btn-secondary border-white/10 text-white">
@@ -41,12 +36,7 @@ export default function DocumentPage() {
           </div>
         </motion.header>
 
-        <motion.section
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4, ease: "easeOut", delay: 0.05 }}
-          className="grid gap-4"
-        >
+        <motion.section initial={false} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, ease: "easeOut", delay: 0.05 }} className="grid gap-4">
           <div className="surface p-5 sm:p-6">
             <p className="text-xs uppercase tracking-[0.34em] text-cyan-200/80">Document</p>
             <h1 className="mt-2 text-3xl font-semibold text-white sm:text-4xl">{document.data?.title ?? "Document"}</h1>

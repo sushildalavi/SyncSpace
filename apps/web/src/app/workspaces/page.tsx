@@ -29,7 +29,7 @@ export default function WorkspacesPage() {
       <HaikeiBackdrop />
 
       <div className="relative mx-auto flex min-h-[calc(100vh-2rem)] max-w-6xl flex-col gap-4">
-        <motion.header initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }} className="glass-nav flex flex-wrap items-center justify-between gap-3">
+        <motion.header initial={false} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }} className="glass-nav flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="text-sm uppercase tracking-[0.3em] text-cyan-200/80">Workspace selector</p>
             <h1 className="mt-2 text-3xl font-semibold text-white">Your workspaces</h1>
@@ -40,7 +40,7 @@ export default function WorkspacesPage() {
         </motion.header>
 
         <section className="grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
-          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }} className="surface p-6">
+          <motion.div initial={false} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }} className="surface p-6">
             <p className="text-xs uppercase tracking-[0.34em] text-cyan-200/80">Welcome back</p>
             <h2 className="mt-2 text-2xl font-semibold text-white">{user.displayName}</h2>
             <p className="mt-3 text-sm leading-6 text-slate-300">
@@ -53,7 +53,7 @@ export default function WorkspacesPage() {
             </div>
           </motion.div>
 
-          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: 0.05 }} className="surface-strong p-6">
+          <motion.div initial={false} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: 0.05 }} className="surface-strong p-6">
             <p className="text-xs uppercase tracking-[0.34em] text-cyan-200/80">Workspace cards</p>
             <div className="mt-4 grid gap-4 md:grid-cols-2">
               {isLoading ? (

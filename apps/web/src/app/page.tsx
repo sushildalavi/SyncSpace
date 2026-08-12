@@ -10,7 +10,7 @@ export default function Page() {
       <HaikeiBackdrop />
 
       <div className="relative grid w-full gap-8 lg:grid-cols-[1.1fr_0.9fr]">
-        <motion.section initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.45 }} className="surface p-8">
+        <motion.section initial={false} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.45 }} className="surface p-8">
           <p className="text-sm uppercase tracking-[0.3em] text-cyan-200/80">SyncSpace</p>
           <h1 className="mt-6 max-w-2xl text-5xl font-semibold leading-tight text-white md:text-7xl">
             A calmer collaboration workspace for docs, decisions, and team alignment.
@@ -26,7 +26,7 @@ export default function Page() {
           </div>
         </motion.section>
 
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.45, delay: 0.05 }}>
+        <motion.div initial={false} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.45, delay: 0.05 }}>
           <LoginPanel />
         </motion.div>
       </div>

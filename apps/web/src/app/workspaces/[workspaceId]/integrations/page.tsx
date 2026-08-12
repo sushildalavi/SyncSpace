@@ -92,12 +92,7 @@ export default function IntegrationsPage() {
     <main className="relative min-h-screen overflow-hidden px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
       <HaikeiBackdrop />
       <div className="relative mx-auto flex min-h-[calc(100vh-2rem)] max-w-7xl flex-col gap-4">
-        <motion.header
-          initial={{ opacity: 0, y: -8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.35, ease: "easeOut" }}
-          className="glass-nav flex flex-wrap items-center justify-between gap-3"
-        >
+        <motion.header initial={false} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, ease: "easeOut" }} className="glass-nav flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <Link href={`/workspaces/${params.workspaceId}`} className="btn-secondary border-white/10 text-white">
               Back to workspace
@@ -108,7 +103,7 @@ export default function IntegrationsPage() {
         </motion.header>
 
         <section className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
-          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }} className="surface p-6">
+          <motion.div initial={false} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }} className="surface p-6">
             <p className="text-xs uppercase tracking-[0.34em] text-cyan-200/80">Integrations</p>
             <h1 className="mt-2 text-3xl font-semibold text-white">Route important updates to Slack or Teams</h1>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300">
@@ -130,7 +125,7 @@ export default function IntegrationsPage() {
             </div>
           </motion.div>
 
-          <motion.aside initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: 0.05 }} className="surface-strong p-6">
+          <motion.aside initial={false} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: 0.05 }} className="surface-strong p-6">
             <p className="text-xs uppercase tracking-[0.34em] text-cyan-200/80">Connected state</p>
             <h2 className="mt-2 text-xl font-semibold text-white">What happens when you wire this up</h2>
             <div className="mt-4 space-y-3 text-sm text-slate-300">

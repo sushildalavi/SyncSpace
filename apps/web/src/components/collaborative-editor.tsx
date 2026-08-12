@@ -47,12 +47,7 @@ export function CollaborativeEditor({ documentId, workspaceId }: { documentId: s
 
   return (
     <section className="grid gap-6 xl:grid-cols-[minmax(0,1.5fr)_380px]">
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.35, ease: "easeOut" }}
-        className="paper overflow-hidden"
-      >
+      <motion.div initial={false} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, ease: "easeOut" }} className="paper overflow-hidden">
         <div className="border-b border-slate-200/80 bg-white/80 px-6 py-4 backdrop-blur">
           <div className="flex flex-wrap items-center gap-3">
             <span className="pill border-slate-200 bg-slate-100 text-slate-700">Collaborative editor</span>
@@ -156,12 +151,7 @@ export function CollaborativeEditor({ documentId, workspaceId }: { documentId: s
 
 function SideCard({ title, eyebrow, children }: { title: string; eyebrow: string; children: ReactNode }) {
   return (
-    <motion.aside
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.35, ease: "easeOut" }}
-      className="surface-strong p-5"
-    >
+    <motion.aside initial={false} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, ease: "easeOut" }} className="surface-strong p-5">
       <p className="text-xs uppercase tracking-[0.3em] text-cyan-200/80">{eyebrow}</p>
       <h2 className="mt-2 text-lg font-semibold text-white">{title}</h2>
       <div className="mt-4">{children}</div>

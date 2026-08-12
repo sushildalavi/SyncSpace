@@ -17,7 +17,7 @@ export default function HistoryPage() {
       <HaikeiBackdrop />
 
       <div className="relative mx-auto flex min-h-[calc(100vh-2rem)] max-w-5xl flex-col gap-4">
-        <motion.header initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }} className="glass-nav flex items-center justify-between gap-3">
+        <motion.header initial={false} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }} className="glass-nav flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <Link href={`/documents/${params.documentId}`} className="btn-secondary border-white/10 text-white">
               Back to doc
@@ -27,7 +27,7 @@ export default function HistoryPage() {
           <span className="text-sm text-slate-300">Snapshots and version memory</span>
         </motion.header>
 
-        <motion.section initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }} className="surface p-6">
+        <motion.section initial={false} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }} className="surface p-6">
           <p className="text-xs uppercase tracking-[0.34em] text-cyan-200/80">Version history</p>
           <h1 className="mt-2 text-3xl font-semibold text-white">Document history</h1>
           <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300">
