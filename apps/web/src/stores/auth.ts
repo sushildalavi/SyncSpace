@@ -12,19 +12,28 @@ type AuthState = {
   logout: () => void;
 };
 
+function readSession(): Pick<AuthState, "token" | "user"> {
+  if (typeof window === "undefined") {
+    return { token: null, user: null };
+  }
+
+  const token = window.localStorage.getItem("syncspace-token");
+  const userRaw = window.localStorage.getItem("syncspace-user");
+  if (!token || !userRaw) {
+    return { token: null, user: null };
+  }
+
+  try {
+    return { token, user: JSON.parse(userRaw) as User };
+  } catch {
+    return { token: null, user: null };
+  }
+}
+
 export const useAuth = create<AuthState>((set) => ({
-  token: null,
-  user: null,
+  ...readSession(),
   hydrate: () => {
-    if (typeof window === "undefined") {
-      return;
-    }
-    const token = window.localStorage.getItem("syncspace-token");
-    const userRaw = window.localStorage.getItem("syncspace-user");
-    if (!token || !userRaw) {
-      return;
-    }
-    set({ token, user: JSON.parse(userRaw) as User });
+    set(readSession());
   },
   setSession: (token, user) => {
     window.localStorage.setItem("syncspace-token", token);

@@ -8,13 +8,17 @@
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
+    "test:e2e": "playwright test",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },
   "devDependencies": {
     "@eslint/js": "^9.34.0",
+    "@next/eslint-plugin-next": "15.5.2",
+    "@playwright/test": "^1.62.1",
     "@typescript-eslint/eslint-plugin": "^8.40.0",
     "@typescript-eslint/parser": "^8.40.0",
+    "playwright": "^1.62.1",
     "prettier": "^3.5.3",
     "turbo": "^2.5.6"
   }
