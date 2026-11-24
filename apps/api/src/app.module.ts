@@ -5,6 +5,7 @@ import { AuthModule } from "./auth/auth.module.js";
 import { CollaborationModule } from "./collaboration/collaboration.module.js";
 import { DatabaseModule } from "./db/database.module.js";
 import { DocumentsModule } from "./documents/documents.module.js";
+import { ConfigController, RootController } from "./config.controller.js";
 import { HealthController } from "./health.controller.js";
 import { IntegrationsModule } from "./integrations/integrations.module.js";
 import { MailModule } from "./mail/mail.module.js";
@@ -28,6 +29,6 @@ import { WorkspacesModule } from "./workspaces/workspaces.module.js";
     MeModule,
     CollaborationModule
   ],
-  controllers: [HealthController]
+  controllers: [HealthController, ConfigController, RootController]
 })
 export class AppModule {}

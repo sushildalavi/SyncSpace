@@ -1,5 +1,6 @@
 import { Global, Module } from "@nestjs/common";
 import { APP_GUARD } from "@nestjs/core";
+import { AuditService } from "../audit/audit.service.js";
 import { DB, type Db } from "../db/database.module.js";
 import { MailerService } from "../mail/mailer.service.js";
 import { RealtimeBus } from "../realtime/realtime-bus.service.js";
@@ -13,12 +14,15 @@ import { SessionGuard } from "./session.guard.js";
   providers: [
     {
       provide: AUTH,
-      inject: [DB, APP_ENV, MailerService, RealtimeBus],
-      useFactory: (db: Db, env: AppEnv, mailer: MailerService, bus: RealtimeBus) =>
+      inject: [DB, APP_ENV, MailerService, RealtimeBus, AuditService],
+      useFactory: (db: Db, env: AppEnv, mailer: MailerService, bus: RealtimeBus, audit: AuditService) =>
         createAuth({
           db,
           env,
           sendMail: (message) => mailer.send(message),
+          audit: (event) => {
+            void audit.record({ type: event.type, actorId: event.userId, metadata: event.metadata, ip: event.ip }).catch(() => undefined);
+          },
           onSessionRevoked: (session) => {
             void bus.publish({ type: "session.revoked", userId: session.userId, sessionId: session.id });
           }

@@ -22,6 +22,8 @@ export const EnvironmentSchema = z
     MAIL_FROM: z.string().min(3).default("SyncSpace <no-reply@syncspace.local>"),
     REQUIRE_EMAIL_VERIFICATION: booleanFlag.default("false"),
     RUN_MIGRATIONS: booleanFlag.default("true"),
+    /** Number of reverse proxies in front of the API (0 = clients connect directly). Controls which IP is trusted. */
+    TRUST_PROXY: z.coerce.number().int().min(0).max(5).default(0),
     SESSION_TTL_DAYS: z.coerce.number().int().positive().default(7),
     /** Only read by the one-off MongoDB -> PostgreSQL migrator. */
     LEGACY_MONGO_URL: z.string().url().optional()

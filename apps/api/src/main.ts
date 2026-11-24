@@ -24,12 +24,18 @@ async function bootstrap(): Promise<void> {
     await runMigrations(app.get<Db>(DB) as unknown as ReturnType<typeof drizzle>);
   }
 
-  app.set("trust proxy", 1);
+  app.set("trust proxy", env.TRUST_PROXY);
   app.useWebSocketAdapter(new WsAdapter(app));
   app.use(helmet());
   app.enableCors({ origin: env.WEB_ORIGIN, credentials: true, methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"] });
   app.use(originCheck(env.WEB_ORIGIN));
-  app.getHttpAdapter().getInstance().all("/api/auth/*splat", toNodeHandler(app.get<Auth>(AUTH)));
+  const authHandler = toNodeHandler(app.get<Auth>(AUTH));
+  app.getHttpAdapter().getInstance().all("/api/auth/*splat", (request: express.Request, response: express.Response) => {
+    // Better Auth rate-limits by X-Forwarded-For and skips limiting when it is absent. Overwrite it with the
+    // address Express resolved under our TRUST_PROXY setting, so clients can neither spoof nor omit it.
+    request.headers["x-forwarded-for"] = request.ip ?? request.socket.remoteAddress ?? "";
+    return authHandler(request, response);
+  });
   app.use(express.json({ limit: "100kb" }));
   app.enableShutdownHooks();
 

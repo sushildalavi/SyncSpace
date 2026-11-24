@@ -11,3 +11,8 @@ playwright-report
 .env.local
 !.env.example
 *.tsbuildinfo
+
+test-results/
+playwright-report/
+.next/
+*.tsbuildinfo

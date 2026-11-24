@@ -20,12 +20,13 @@ export type AuthDeps = {
   };
   sendMail: (message: MailMessage) => Promise<void>;
   onSessionRevoked?: (session: { id: string; userId: string }) => void;
+  audit?: (event: { type: string; userId: string; metadata?: Record<string, unknown>; ip?: string | null }) => void;
 };
 
 /** OWASP-recommended Argon2id parameters (m=19 MiB, t=2, p=1). */
 const ARGON2 = { algorithm: Algorithm.Argon2id, memoryCost: 19_456, timeCost: 2, parallelism: 1 } as const;
 
-export function createAuth({ db, env, sendMail, onSessionRevoked }: AuthDeps) {
+export function createAuth({ db, env, sendMail, onSessionRevoked, audit }: AuthDeps) {
   const googleEnabled = Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET);
   const production = env.NODE_ENV === "production";
 
@@ -35,6 +36,8 @@ export function createAuth({ db, env, sendMail, onSessionRevoked }: AuthDeps) {
     basePath: "/api/auth",
     secret: env.BETTER_AUTH_SECRET,
     trustedOrigins: [env.WEB_ORIGIN],
+    // OAuth failures (cancelled consent, bad state, unlinked account) land on a page that explains them.
+    onAPIError: { errorURL: `${env.WEB_ORIGIN}/auth/error` },
     database: drizzleAdapter(db, {
       provider: "pg",
       schema: {
@@ -63,6 +66,9 @@ export function createAuth({ db, env, sendMail, onSessionRevoked }: AuthDeps) {
       maxPasswordLength: 128,
       requireEmailVerification: env.REQUIRE_EMAIL_VERIFICATION,
       revokeSessionsOnPasswordReset: true,
+      onPasswordReset: async ({ user }) => {
+        audit?.({ type: "auth.password_reset", userId: user.id });
+      },
       password: {
         hash: (password) => hash(password, ARGON2),
         verify: ({ hash: stored, password }) => verify(stored, password)
@@ -81,7 +87,14 @@ export function createAuth({ db, env, sendMail, onSessionRevoked }: AuthDeps) {
       sendOnSignUp: true,
       sendOnSignIn: true,
       autoSignInAfterVerification: true,
-      sendVerificationEmail: async ({ user, url }) => {
+      sendVerificationEmail: async ({ user, url: rawUrl }) => {
+        // Links created by an unverified sign-in attempt carry no callback. Always return people to the app.
+        const link = new URL(rawUrl);
+        const callback = link.searchParams.get("callbackURL");
+        if (!callback || callback === "/") {
+          link.searchParams.set("callbackURL", `${env.WEB_ORIGIN}/verify-email?status=success`);
+        }
+        const url = link.toString();
         const body = actionEmail({
           heading: "Confirm your email address",
           body: "Confirm this address to finish setting up your SyncSpace account.",
@@ -115,13 +128,33 @@ export function createAuth({ db, env, sendMail, onSessionRevoked }: AuthDeps) {
     databaseHooks: {
       account: {
         // We only need the identity, not the ability to call Google on the user's behalf.
-        create: { before: async (account) => ({ data: stripProviderTokens(account) }) },
-        update: { before: async (account) => ({ data: stripProviderTokens(account) }) }
+        create: {
+          before: async (account) => ({ data: stripProviderTokens(account) }),
+          after: async (account) => {
+            if (account.providerId !== "credential") {
+              audit?.({ type: "auth.provider_linked", userId: account.userId, metadata: { provider: account.providerId } });
+            }
+          }
+        },
+        update: { before: async (account) => ({ data: stripProviderTokens(account) }) },
+        delete: {
+          after: async (account) => {
+            if (account?.providerId !== "credential") {
+              audit?.({ type: "auth.provider_unlinked", userId: account!.userId, metadata: { provider: account!.providerId } });
+            }
+          }
+        }
       },
       session: {
+        create: {
+          after: async (session) => {
+            audit?.({ type: "auth.signed_in", userId: session.userId, ip: session.ipAddress ?? null, metadata: { userAgent: session.userAgent ?? null } });
+          }
+        },
         delete: {
           after: async (session) => {
             onSessionRevoked?.({ id: session.id, userId: session.userId });
+            audit?.({ type: "auth.session_ended", userId: session.userId });
           }
         }
       }
