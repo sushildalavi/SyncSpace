@@ -6,6 +6,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 LOG_DIR="${TMPDIR:-/tmp}/syncspace-bench"; mkdir -p "$LOG_DIR"
 
+until docker compose exec -T postgres pg_isready -U syncspace >/dev/null 2>&1; do sleep 1; done
 docker compose exec -T postgres psql -U syncspace -d postgres -q -c "drop database if exists syncspace_bench with (force)" -c "create database syncspace_bench"
 
 export NODE_ENV=production

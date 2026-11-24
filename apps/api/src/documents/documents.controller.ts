@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, Get, HttpCode, Inject, Param, ParseIntPipe, Patch, Post, Put, Query } from "@nestjs/common";
-import { DocumentCreateSchema, DocumentUpdateMetaSchema } from "@syncspace/contracts";
+import { DocumentCreateSchema, DocumentRestoreSchema, DocumentUpdateMetaSchema } from "@syncspace/contracts";
 import type { AuthenticatedUser } from "../auth/session.guard.js";
 import { CurrentUser } from "../common/current-user.decorator.js";
 import { ZodPipe } from "../common/zod.pipe.js";
@@ -71,6 +71,16 @@ export class DocumentsController {
   @Get("documents/:documentId/history")
   history(@Param("documentId") documentId: string, @CurrentUser() user: AuthenticatedUser) {
     return this.documents.history(documentId, user.id);
+  }
+
+  @Post("documents/:documentId/restore")
+  @HttpCode(200)
+  restore(
+    @Param("documentId") documentId: string,
+    @Body(new ZodPipe(DocumentRestoreSchema)) body: { version: number },
+    @CurrentUser() user: AuthenticatedUser
+  ) {
+    return this.documents.restore(documentId, body.version, user.id);
   }
 
   @Get("documents/:documentId/history/:version")

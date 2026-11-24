@@ -14,14 +14,23 @@ export class MailerService {
   private readonly transport?: Transporter;
   private readonly from: string;
 
-  constructor(@Inject(APP_ENV) env: { SMTP_URL?: string; MAIL_FROM: string }) {
+  private readonly production: boolean;
+
+  constructor(@Inject(APP_ENV) env: { SMTP_URL?: string | undefined; MAIL_FROM: string; NODE_ENV?: string }) {
     this.from = env.MAIL_FROM;
+    this.production = env.NODE_ENV === "production";
     this.transport = env.SMTP_URL ? nodemailer.createTransport(env.SMTP_URL) : undefined;
   }
 
   async send(message: MailMessage): Promise<void> {
     if (!this.transport) {
-      this.logger.warn(`SMTP not configured. Email to ${message.to}: ${message.subject}\n${message.text}`);
+      // The body carries single-use sign-in, reset and invitation links, which are credentials.
+      // They are only printed outside production, where this is the stand-in for an inbox.
+      this.logger.warn(
+        this.production
+          ? `SMTP_URL is not set, so this email was NOT delivered: "${message.subject}" to ${message.to}`
+          : `SMTP not configured. Email to ${message.to}: ${message.subject}\n${message.text}`
+      );
       return;
     }
     await this.transport.sendMail({ from: this.from, ...message });

@@ -1,13 +1,13 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, asc, desc, eq, gt, ilike, isNull, lte, sql } from "drizzle-orm";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import * as Y from "yjs";
 import { ROLE_PERMISSIONS } from "@syncspace/contracts";
 import { AccessService } from "../access/access.service.js";
 import { AuditService } from "../audit/audit.service.js";
 import { DB, type Db } from "../db/database.module.js";
 import { document, documentFavorite, documentSnapshot, documentUpdate, documentView, user, workspace, workspaceMember } from "../db/schema.js";
-import { RealtimeBus } from "../realtime/realtime-bus.service.js";
+import { RealtimeBus, SERVER_CONNECTION } from "../realtime/realtime-bus.service.js";
 
 /** Snapshot once this many updates have accumulated since the previous one. */
 export const SNAPSHOT_EVERY = 50;
@@ -189,6 +189,51 @@ export class DocumentsService {
     await this.access.requireDocument(documentId, userId, "document.read");
     const state = await this.loadState(documentId, version);
     return { version: state.version, state: Buffer.from(state.update).toString("base64") };
+  }
+
+  /**
+   * Makes the document read as it did after `version`, as a NEW update on top of the current state. History is never
+   * rewritten, so a restore can itself be undone by restoring a later version, and anyone typing concurrently keeps
+   * their newer edits (Yjs merges the replacement with them).
+   */
+  async restore(documentId: string, version: number, userId: string): Promise<{ restoredFrom: number; version: number; unchanged: boolean }> {
+    const { document: doc } = await this.access.requireDocument(documentId, userId, "document.write");
+    if (!Number.isInteger(version) || version < 1 || version > doc.currentVersion) {
+      throw new NotFoundException("Version not found");
+    }
+    const current = await this.loadState(documentId);
+    const target = await this.loadState(documentId, version);
+
+    const live = new Y.Doc();
+    Y.applyUpdate(live, current.update);
+    const past = new Y.Doc();
+    Y.applyUpdate(past, target.update);
+
+    // Rewriting identical content would still mint a new CRDT update, so compare first.
+    if (live.getXmlFragment("default").toString() === past.getXmlFragment("default").toString()) {
+      return { restoredFrom: version, version: current.version, unchanged: true };
+    }
+
+    let captured: Uint8Array | null = null;
+    live.on("update", (update: Uint8Array) => {
+      captured = captured ? Y.mergeUpdates([captured, update]) : update;
+    });
+    live.transact(() => {
+      const fragment = live.getXmlFragment("default");
+      fragment.delete(0, fragment.length);
+      fragment.insert(0, past.getXmlFragment("default").toArray().map((node) => node.clone() as Y.XmlElement | Y.XmlText));
+    });
+    if (!captured) {
+      return { restoredFrom: version, version: current.version, unchanged: true };
+    }
+
+    const payload: Uint8Array = captured;
+    const updateId = `restore-${randomUUID()}`;
+    const saved = await this.persistUpdate({ documentId, actorId: userId, clientId: "restore", updateId, payload, sourceInstanceId: "api" });
+    await this.audit.record({ type: "document.restored", actorId: userId, workspaceId: doc.workspaceId, metadata: { documentId, restoredFrom: version, newVersion: saved.version } });
+    await this.bus.publish({ type: "document.update", documentId, connectionId: SERVER_CONNECTION, updateId, version: saved.version, payload: Buffer.from(payload).toString("base64"), actorId: userId });
+    void this.snapshotIfNeeded(documentId).catch(() => undefined);
+    return { restoredFrom: version, version: saved.version, unchanged: false };
   }
 
   /* ---------------- collaboration persistence ---------------- */

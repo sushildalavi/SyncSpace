@@ -4,6 +4,8 @@ import { randomUUID } from "node:crypto";
 import { APP_ENV } from "../shared/app-env.js";
 
 export const EVENT_STREAM = "syncspace:events";
+/** `connectionId` of updates the server itself authored (for example a version restore). Every socket should receive these. */
+export const SERVER_CONNECTION = "server";
 
 export type BusEvent =
   | { type: "document.update"; documentId: string; connectionId: string; updateId: string; version: number; payload: string; actorId: string }

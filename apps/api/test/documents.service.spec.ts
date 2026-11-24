@@ -141,3 +141,82 @@ describe("document access", () => {
     expect(hits.map((h) => h.title)).toEqual(["100% done"]);
   });
 });
+
+describe("restoring a version", () => {
+  function paragraphs(texts: string[]) {
+    return (doc: Y.Doc) =>
+      edit(doc, () => {
+        const fragment = doc.getXmlFragment("default");
+        for (const text of texts) {
+          const p = new Y.XmlElement("paragraph");
+          p.insert(0, [new Y.XmlText(text)]);
+          fragment.push([p]);
+        }
+      });
+  }
+  function edit(doc: Y.Doc, fn: () => void): Uint8Array {
+    let bytes: Uint8Array = new Uint8Array();
+    const handler = (update: Uint8Array) => (bytes = update);
+    doc.on("update", handler);
+    fn();
+    doc.off("update", handler);
+    return bytes;
+  }
+  const textOf = (update: Uint8Array) => {
+    const d = new Y.Doc();
+    Y.applyUpdate(d, update);
+    return d.getXmlFragment("default").toArray().map((n) => (n as Y.XmlElement).toString());
+  };
+
+  it("rewinds the content as a new version and never rewrites history", async () => {
+    const { owner, doc } = await setup();
+    const source = new Y.Doc();
+    await persist(doc.id, owner.id, "a", paragraphs(["one"])(source));
+    await persist(doc.id, owner.id, "b", paragraphs(["two"])(source));
+    await persist(doc.id, owner.id, "c", paragraphs(["three"])(source));
+
+    const result = await documents.restore(doc.id, 2, owner.id);
+    expect(result).toMatchObject({ restoredFrom: 2, version: 4, unchanged: false });
+    expect(textOf((await documents.loadState(doc.id)).update)).toEqual(["<paragraph>one</paragraph>", "<paragraph>two</paragraph>"]);
+
+    // the old versions are intact and the restore is itself restorable
+    expect(textOf((await documents.loadState(doc.id, 3)).update)).toHaveLength(3);
+    await documents.restore(doc.id, 3, owner.id);
+    expect(textOf((await documents.loadState(doc.id)).update)).toHaveLength(3);
+    expect((await documents.history(doc.id, owner.id)).updates.map((u) => u.version)).toEqual([5, 4, 3, 2, 1]);
+  });
+
+  it("keeps edits that were made concurrently with the restore", async () => {
+    const { owner, doc } = await setup();
+    const source = new Y.Doc();
+    await persist(doc.id, owner.id, "a", paragraphs(["base"])(source));
+    await persist(doc.id, owner.id, "b", paragraphs(["added later"])(source));
+    // a client that already had version 2 types a new paragraph while the restore is happening
+    const concurrent = paragraphs(["typed during restore"])(source);
+    await documents.restore(doc.id, 1, owner.id);
+    await persist(doc.id, owner.id, "late", concurrent);
+    const texts = textOf((await documents.loadState(doc.id)).update).join("");
+    expect(texts).toContain("base");
+    expect(texts).toContain("typed during restore");
+    expect(texts).not.toContain("added later");
+  });
+
+  it("reports unchanged when the target already matches, and rejects bad versions", async () => {
+    const { owner, doc } = await setup();
+    const source = new Y.Doc();
+    await persist(doc.id, owner.id, "a", paragraphs(["same"])(source));
+    expect(await documents.restore(doc.id, 1, owner.id)).toMatchObject({ unchanged: true, version: 1 });
+    await expect(documents.restore(doc.id, 9, owner.id)).rejects.toMatchObject({ status: 404 });
+    await expect(documents.restore(doc.id, 0, owner.id)).rejects.toMatchObject({ status: 404 });
+  });
+
+  it("is refused for viewers and non-members", async () => {
+    const { owner, ws, doc } = await setup();
+    await persist(doc.id, owner.id, "a", paragraphs(["x"])(new Y.Doc()));
+    const viewer = await createUser(db);
+    await workspaces.acceptById((await workspaces.invite(ws.id, owner, viewer.email, "viewer")).id, viewer);
+    await expect(documents.restore(doc.id, 1, viewer.id)).rejects.toMatchObject({ status: 403 });
+    const stranger = await createUser(db);
+    await expect(documents.restore(doc.id, 1, stranger.id)).rejects.toMatchObject({ status: 404 });
+  });
+});

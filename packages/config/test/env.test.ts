@@ -16,6 +16,11 @@ describe("parseEnvironment", () => {
   it("rejects a weak auth secret", () => {
     expect(() => parseEnvironment({ ...base, BETTER_AUTH_SECRET: "short" })).toThrow();
   });
+  it("refuses the publicly known placeholder secrets in production only", () => {
+    const placeholder = "dev-only-secret-change-me-0123456789abcdef";
+    expect(() => parseEnvironment({ ...base, NODE_ENV: "production", BETTER_AUTH_SECRET: placeholder })).toThrow(/publicly known/);
+    expect(parseEnvironment({ ...base, NODE_ENV: "development", BETTER_AUTH_SECRET: placeholder }).BETTER_AUTH_SECRET).toBe(placeholder);
+  });
   it("defaults to no trusted proxy and parses booleans", () => {
     const env = parseEnvironment({ ...base, REQUIRE_EMAIL_VERIFICATION: "true" });
     expect(env.TRUST_PROXY).toBe(0);

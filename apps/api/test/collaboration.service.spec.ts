@@ -307,3 +307,37 @@ describe("presence", () => {
     expect(left.payload.connectionId).toBe(state.payload.connectionId);
   });
 });
+
+describe("self-healing sync", () => {
+  it("tells connected clients the latest persisted version, and resends state on request", async () => {
+    const { doc, owner } = await fixture();
+    const client = connect(instances[0]!, doc.id, await signIn(owner));
+    await client.waitFor("document.snapshot");
+    client.send("document.update", body(doc.id, update("first")));
+    await client.waitFor("document.ack");
+
+    await instances[0]!.service.broadcastSyncChecks();
+    const check = await client.waitFor("sync.check");
+    expect(check.payload).toEqual({ documentId: doc.id, version: 1 });
+
+    // a client that missed events asks for the state again and gets the full document
+    client.messages.length = 0;
+    client.send("sync.request", {});
+    const snapshot = await client.waitFor("document.snapshot");
+    const rebuilt = new Y.Doc();
+    Y.applyUpdate(rebuilt, Buffer.from(snapshot.payload.snapshot, "base64"));
+    expect(rebuilt.getText("body").toString()).toBe("first");
+    expect(snapshot.payload.version).toBe(1);
+  });
+
+  it("delivers server-authored updates (a restore) to sockets on the instance that published them", async () => {
+    const { doc, owner } = await fixture();
+    const local = connect(instances[0]!, doc.id, await signIn(owner));
+    const other = connect(instances[1]!, doc.id, await signIn(owner));
+    await local.waitFor("document.snapshot");
+    await other.waitFor("document.snapshot");
+    await instances[0]!.service["bus"].publish({ type: "document.update", documentId: doc.id, connectionId: "server", updateId: "restore-x", version: 7, payload: update("restored"), actorId: owner.id });
+    expect((await local.waitFor("document.update")).payload.version).toBe(7);
+    expect((await other.waitFor("document.update")).payload.version).toBe(7);
+  });
+});

@@ -18,9 +18,9 @@ import { AUTH } from "../auth/auth.constants.js";
 import type { Auth } from "../auth/auth.factory.js";
 import { resolveSession } from "../auth/session.guard.js";
 import { DB, type Db } from "../db/database.module.js";
-import { session as sessionTable } from "../db/schema.js";
+import { document as documentTable, session as sessionTable } from "../db/schema.js";
 import { DocumentsService } from "../documents/documents.service.js";
-import { RealtimeBus, type BusEnvelope } from "../realtime/realtime-bus.service.js";
+import { RealtimeBus, SERVER_CONNECTION, type BusEnvelope } from "../realtime/realtime-bus.service.js";
 import { APP_ENV, type AppEnv } from "../shared/app-env.js";
 
 type Connection = {
@@ -40,6 +40,8 @@ type Connection = {
 
 const PRESENCE_TTL_MS = 45_000;
 const REVALIDATE_EVERY_MS = 15_000;
+/** How often every open document tells its clients the latest persisted version, so a client that missed bus events notices. */
+const SYNC_CHECK_EVERY_MS = 10_000;
 
 @Injectable()
 export class CollaborationService implements OnModuleInit, OnModuleDestroy {
@@ -48,6 +50,7 @@ export class CollaborationService implements OnModuleInit, OnModuleDestroy {
   private readonly bySocket = new Map<WebSocket, Connection>();
   private unsubscribe?: () => void;
   private timer?: NodeJS.Timeout;
+  private syncTimer?: NodeJS.Timeout;
 
   constructor(
     @Inject(DB) private readonly db: Db,
@@ -62,11 +65,14 @@ export class CollaborationService implements OnModuleInit, OnModuleDestroy {
     this.unsubscribe = this.bus.subscribe((envelope) => this.onBusEvent(envelope));
     this.timer = setInterval(() => void this.revalidate().catch((error) => this.logger.warn(String(error))), REVALIDATE_EVERY_MS);
     this.timer.unref();
+    this.syncTimer = setInterval(() => void this.broadcastSyncChecks().catch((error) => this.logger.warn(String(error))), SYNC_CHECK_EVERY_MS);
+    this.syncTimer.unref();
   }
 
   onModuleDestroy(): void {
     this.unsubscribe?.();
     clearInterval(this.timer);
+    clearInterval(this.syncTimer);
     for (const connection of this.bySocket.values()) {
       connection.socket.close(1001, "Server shutting down");
     }
@@ -104,6 +110,14 @@ export class CollaborationService implements OnModuleInit, OnModuleDestroy {
     this.byDocument.set(connection.documentId, set);
 
     // Subscribed first, then state is loaded, so no update can fall into the gap. Yjs merges duplicates.
+    await this.sendState(connection);
+    this.send(connection, { type: "presence.sync", payload: { states: await this.readPresence(connection.documentId, connection.id) } });
+    for (const text of queued.splice(0)) {
+      void this.onMessage(connection, text);
+    }
+  }
+
+  private async sendState(connection: Connection): Promise<void> {
     const state = await this.documents.loadState(connection.documentId);
     this.send(connection, {
       type: "document.snapshot",
@@ -115,9 +129,21 @@ export class CollaborationService implements OnModuleInit, OnModuleDestroy {
         connectionId: connection.id
       }
     });
-    this.send(connection, { type: "presence.sync", payload: { states: await this.readPresence(connection.documentId, connection.id) } });
-    for (const text of queued.splice(0)) {
-      void this.onMessage(connection, text);
+  }
+
+  /**
+   * The Redis stream is best-effort fan-out. If an instance's events are lost (Redis restarted or partitioned) its
+   * sockets would otherwise stay silently behind. Versions are gap-free, so telling clients the latest one lets them
+   * notice and ask for a resync.
+   */
+  async broadcastSyncChecks(): Promise<void> {
+    const ids = [...this.byDocument.keys()];
+    if (ids.length === 0) {
+      return;
+    }
+    const rows = await this.db.select({ id: documentTable.id, version: documentTable.currentVersion }).from(documentTable).where(inArray(documentTable.id, ids));
+    for (const row of rows) {
+      this.broadcastLocal(row.id, { type: "sync.check", payload: { documentId: row.id, version: row.version } });
     }
   }
 
@@ -201,6 +227,8 @@ export class CollaborationService implements OnModuleInit, OnModuleDestroy {
         await this.onDocumentUpdate(connection, payload);
       } else if (type === "presence.update") {
         await this.onPresenceUpdate(connection, payload);
+      } else if (type === "sync.request") {
+        await this.sendState(connection);
       }
     } catch (error) {
       this.logger.error(`message handling failed: ${String(error)}`);
@@ -331,7 +359,7 @@ export class CollaborationService implements OnModuleInit, OnModuleDestroy {
     const remote = instanceId !== this.bus.instanceId;
     switch (event.type) {
       case "document.update":
-        if (remote) {
+        if (remote || event.connectionId === SERVER_CONNECTION) {
           this.broadcastLocal(event.documentId, {
             type: "document.update",
             payload: { documentId: event.documentId, updateId: event.updateId, version: event.version, payload: event.payload, actorId: event.actorId }

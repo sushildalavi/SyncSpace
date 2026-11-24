@@ -7,6 +7,12 @@ const booleanFlag = z
   .enum(["true", "false", "1", "0"])
   .transform((value) => value === "true" || value === "1");
 
+/** Values that appear in this repository and so are known to everyone. */
+export const KNOWN_PLACEHOLDER_SECRETS = [
+  "dev-only-secret-change-me-0123456789abcdef",
+  "replace-with-a-long-random-string-at-least-32-chars"
+];
+
 export const EnvironmentSchema = z
   .object({
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -30,6 +36,10 @@ export const EnvironmentSchema = z
     SESSION_TTL_DAYS: z.coerce.number().int().positive().default(7),
     /** Only read by the one-off MongoDB -> PostgreSQL migrator. */
     LEGACY_MONGO_URL: z.preprocess(blankToUndefined, z.string().url().optional())
+  })
+  .refine((env) => !(env.NODE_ENV === "production" && KNOWN_PLACEHOLDER_SECRETS.includes(env.BETTER_AUTH_SECRET)), {
+    message: "BETTER_AUTH_SECRET is a publicly known placeholder. Generate one with: openssl rand -base64 32",
+    path: ["BETTER_AUTH_SECRET"]
   })
   .refine((env) => Boolean(env.GOOGLE_CLIENT_ID) === Boolean(env.GOOGLE_CLIENT_SECRET), {
     message: "GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET must be set together",

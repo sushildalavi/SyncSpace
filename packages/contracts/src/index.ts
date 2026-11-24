@@ -59,6 +59,8 @@ export const MemberRoleUpdateSchema = z.object({ role: WorkspaceRoleSchema });
 export const DocumentCreateSchema = z.object({ title: z.string().trim().min(1).max(160) });
 export type DocumentCreateInput = z.infer<typeof DocumentCreateSchema>;
 
+export const DocumentRestoreSchema = z.object({ version: z.number().int().min(1) });
+
 export const DocumentUpdateMetaSchema = z.object({ title: z.string().trim().min(1).max(160) });
 
 export const IntegrationProviderSchema = z.enum(["slack", "teams"]);
