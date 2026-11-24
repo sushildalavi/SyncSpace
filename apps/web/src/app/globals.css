@@ -1,71 +1,174 @@
+@import "@fontsource-variable/inter";
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  color-scheme: dark;
+/*
+  Design tokens. Every colour is a space-separated HSL triple so Tailwind can apply alpha.
+  Warm neutrals and a single teal accent. Contrast pairs were chosen for WCAG 2.2 AA.
+*/
+@layer base {
+  :root {
+    --background: 40 20% 98.5%;
+    --foreground: 24 10% 10%;
+    --surface: 0 0% 100%;
+    --muted: 30 14% 95.5%;
+    --muted-foreground: 25 7% 38%;
+    --border: 30 10% 90%;
+    --input: 30 8% 80%;
+    --ring: 173 80% 28%;
+    --primary: 173 82% 22%;
+    --primary-foreground: 0 0% 100%;
+    --primary-soft: 173 45% 93%;
+    --destructive: 0 72% 40%;
+    --destructive-foreground: 0 0% 100%;
+    --destructive-soft: 0 80% 96%;
+    --success: 145 63% 26%;
+    --success-soft: 145 50% 93%;
+    --warning: 30 90% 30%;
+    --warning-soft: 40 90% 92%;
+    --sidebar: 36 18% 96.5%;
+    --sidebar-border: 30 10% 89%;
+
+    --shadow-xs: 0 1px 0 hsl(24 10% 10% / 0.04);
+    --shadow-sm: 0 1px 2px hsl(24 10% 10% / 0.06), 0 0 0 1px hsl(24 10% 10% / 0.03);
+    --shadow-md: 0 4px 12px -2px hsl(24 10% 10% / 0.08), 0 0 0 1px hsl(24 10% 10% / 0.05);
+    --shadow-lg: 0 16px 40px -8px hsl(24 10% 10% / 0.16), 0 0 0 1px hsl(24 10% 10% / 0.06);
+    color-scheme: light;
+  }
+
+  .dark {
+    --background: 24 8% 7%;
+    --foreground: 30 12% 94%;
+    --surface: 24 7% 9.5%;
+    --muted: 24 6% 13%;
+    --muted-foreground: 28 8% 66%;
+    --border: 24 6% 17%;
+    --input: 24 6% 26%;
+    --ring: 172 62% 52%;
+    --primary: 172 62% 48%;
+    --primary-foreground: 24 12% 7%;
+    --primary-soft: 172 40% 14%;
+    --destructive: 0 72% 62%;
+    --destructive-foreground: 24 12% 7%;
+    --destructive-soft: 0 40% 15%;
+    --success: 145 55% 55%;
+    --success-soft: 145 35% 14%;
+    --warning: 38 90% 60%;
+    --warning-soft: 38 50% 14%;
+    --sidebar: 24 8% 8.5%;
+    --sidebar-border: 24 6% 14%;
+
+    --shadow-xs: 0 1px 0 hsl(0 0% 0% / 0.3);
+    --shadow-sm: 0 1px 2px hsl(0 0% 0% / 0.4), 0 0 0 1px hsl(0 0% 100% / 0.04);
+    --shadow-md: 0 6px 16px -2px hsl(0 0% 0% / 0.5), 0 0 0 1px hsl(0 0% 100% / 0.06);
+    --shadow-lg: 0 20px 48px -8px hsl(0 0% 0% / 0.7), 0 0 0 1px hsl(0 0% 100% / 0.08);
+    color-scheme: dark;
+  }
+
+  * {
+    @apply border-border;
+  }
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    @apply bg-background font-sans text-base text-foreground antialiased;
+    font-feature-settings: "cv11", "ss03";
+  }
+  ::selection {
+    background: hsl(var(--primary) / 0.22);
+  }
+  /* One focus indicator for the whole product: 2px ring with a 2px offset. */
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
 }
 
-html,
-body {
-  min-height: 100%;
-  background:
-    radial-gradient(circle at top left, rgba(16, 185, 129, 0.12), transparent 28%),
-    radial-gradient(circle at top right, rgba(59, 130, 246, 0.12), transparent 24%),
-    linear-gradient(180deg, #020617 0%, #0f172a 45%, #111827 100%);
+@layer components {
+  .skeleton {
+    @apply rounded-md bg-muted;
+    background-image: linear-gradient(90deg, transparent 0%, hsl(var(--foreground) / 0.05) 50%, transparent 100%);
+    background-size: 200% 100%;
+    @apply animate-shimmer;
+  }
 }
 
-body {
-  color: #e2e8f0;
+/* ---------- Editor canvas ---------- */
+.editor-canvas .ProseMirror {
+  @apply min-h-[60vh] outline-none;
+  font-size: 1.0625rem;
+  line-height: 1.75;
+  caret-color: hsl(var(--primary));
+}
+.editor-canvas .ProseMirror:focus-visible {
+  outline: none;
+}
+.editor-canvas .ProseMirror > * + * {
+  margin-top: 0.85em;
+}
+.editor-canvas .ProseMirror h1 { @apply text-3xl font-semibold; margin-top: 1.6em; }
+.editor-canvas .ProseMirror h2 { @apply text-2xl font-semibold; margin-top: 1.5em; }
+.editor-canvas .ProseMirror h3 { @apply text-xl font-semibold; margin-top: 1.4em; }
+.editor-canvas .ProseMirror ul { list-style: disc; padding-left: 1.4em; }
+.editor-canvas .ProseMirror ol { list-style: decimal; padding-left: 1.4em; }
+.editor-canvas .ProseMirror li + li { margin-top: 0.25em; }
+.editor-canvas .ProseMirror blockquote {
+  border-left: 2px solid hsl(var(--border));
+  padding-left: 1em;
+  @apply text-muted-foreground;
+}
+.editor-canvas .ProseMirror code {
+  @apply rounded-sm bg-muted px-1 py-0.5 font-mono text-[0.9em];
+}
+.editor-canvas .ProseMirror pre {
+  @apply overflow-x-auto rounded-lg bg-muted p-4 font-mono text-sm;
+}
+.editor-canvas .ProseMirror pre code { @apply bg-transparent p-0; }
+.editor-canvas .ProseMirror a {
+  @apply text-primary underline decoration-primary/40 underline-offset-2 transition-colors;
+}
+.editor-canvas .ProseMirror a:hover { decoration-color: hsl(var(--primary)); }
+.editor-canvas .ProseMirror hr { @apply my-8 border-border; }
+.editor-canvas .ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  @apply pointer-events-none float-left h-0 text-muted-foreground/70;
+}
+
+/* Remote collaborator carets */
+.collaboration-carets__caret {
   position: relative;
-  overflow-x: hidden;
+  margin-left: -1px;
+  margin-right: -1px;
+  border-left: 2px solid;
+  border-right: 0;
+  word-break: normal;
+  pointer-events: none;
 }
-
-* {
-  box-sizing: border-box;
-}
-
-a {
-  color: inherit;
-  text-decoration: none;
-}
-
-::selection {
-  background: rgba(56, 189, 248, 0.35);
-}
-
-.surface {
-  @apply rounded-[28px] border border-white/10 bg-white/5 shadow-[0_24px_80px_rgba(2,6,23,0.35)] backdrop-blur-xl;
-}
-
-.surface-strong {
-  @apply rounded-[28px] border border-white/10 bg-slate-950/90 shadow-[0_24px_100px_rgba(2,6,23,0.55)] backdrop-blur-xl;
-}
-
-.paper {
-  @apply rounded-[28px] border border-slate-200/80 bg-[#f8fafc] text-slate-900 shadow-[0_24px_90px_rgba(15,23,42,0.22)];
-}
-
-.field {
-  @apply w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-cyan-300/60 focus:ring-2 focus:ring-cyan-300/20;
-}
-
-.field-light {
-  @apply w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-200;
-}
-
-.btn-primary {
-  @apply inline-flex items-center justify-center rounded-2xl bg-cyan-400 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300 disabled:opacity-60;
-}
-
-.btn-secondary {
-  @apply inline-flex items-center justify-center rounded-2xl border border-white/10 px-4 py-3 text-sm font-medium text-slate-200 transition hover:bg-white/5;
-}
-
-.pill {
-  @apply inline-flex items-center rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-slate-200;
-}
-
-.glass-nav {
-  @apply rounded-full border border-white/10 bg-slate-950/60 px-2 py-2 shadow-[0_12px_40px_rgba(2,6,23,0.28)] backdrop-blur-xl;
+.collaboration-carets__label {
+  position: absolute;
+  top: -1.55em;
+  left: -2px;
+  white-space: nowrap;
+  border-radius: 4px 4px 4px 0;
+  padding: 1px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: #fff;
+  user-select: none;
+  pointer-events: none;
 }

@@ -1,22 +1,30 @@
-import { useAuth } from "@/stores/auth";
+import { API_BASE_URL } from "./env";
 
-const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001";
-
-export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const { token } = useAuth.getState();
-  const response = await fetch(`${baseUrl}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(init.headers ?? {})
-    },
-    cache: "no-store"
-  });
-
-  if (!response.ok) {
-    throw new Error(await response.text());
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number
+  ) {
+    super(message);
   }
+}
 
-  return (await response.json()) as T;
+/** Cookie-authenticated JSON client. Credentials are never read or stored by JavaScript. */
+export async function api<T>(path: string, init: { method?: string; body?: unknown; signal?: AbortSignal } = {}): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: init.method ?? "GET",
+    credentials: "include",
+    headers: init.body === undefined ? undefined : { "Content-Type": "application/json" },
+    body: init.body === undefined ? undefined : JSON.stringify(init.body),
+    ...(init.signal ? { signal: init.signal } : {})
+  });
+  if (response.status === 204) {
+    return undefined as T;
+  }
+  const data = (await response.json().catch(() => null)) as { message?: string | string[] } | null;
+  if (!response.ok) {
+    const message = Array.isArray(data?.message) ? data.message.join(", ") : data?.message;
+    throw new ApiError(message ?? `Request failed (${response.status})`, response.status);
+  }
+  return data as T;
 }

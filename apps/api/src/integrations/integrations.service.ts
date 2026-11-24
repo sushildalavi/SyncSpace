@@ -1,125 +1,120 @@
-import { Injectable, NotFoundException, Inject } from "@nestjs/common";
-import { DatabaseService } from "../database/database.service.js";
-import { WorkspacesService } from "../workspaces/workspaces.service.js";
+import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { and, asc, eq } from "drizzle-orm";
+import { AccessService } from "../access/access.service.js";
+import type { AuthenticatedUser } from "../auth/session.guard.js";
+import { DB, type Db } from "../db/database.module.js";
+import { workspaceIntegration } from "../db/schema.js";
 
-type UserContext = { id: string; email: string; displayName: string };
+type Provider = "slack" | "teams";
+
+const ALLOWED_HOSTS: Record<Provider, RegExp[]> = {
+  slack: [/^hooks\.slack\.com$/],
+  teams: [/\.webhook\.office\.com$/, /^outlook\.office\.com$/, /\.logic\.azure\.com$/, /\.powerplatform\.com$/]
+};
+
+/** Webhooks are server-side requests to a user-supplied URL, so only the providers' own hosts are allowed. */
+export function assertWebhookAllowed(provider: Provider, rawUrl: string): void {
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    throw new BadRequestException("Enter a valid webhook URL");
+  }
+  if (url.protocol !== "https:" || !ALLOWED_HOSTS[provider].some((pattern) => pattern.test(url.hostname))) {
+    throw new BadRequestException(`That doesn't look like a ${provider === "slack" ? "Slack" : "Microsoft Teams"} webhook URL`);
+  }
+}
+
+function maskWebhook(rawUrl: string): string {
+  try {
+    const url = new URL(rawUrl);
+    return `${url.origin}/…${url.pathname.slice(-4)}`;
+  } catch {
+    return "…";
+  }
+}
 
 @Injectable()
 export class IntegrationsService {
   constructor(
-    @Inject(DatabaseService) private readonly database: DatabaseService,
-    @Inject(WorkspacesService) private readonly workspacesService: WorkspacesService
+    @Inject(DB) private readonly db: Db,
+    @Inject(AccessService) private readonly access: AccessService
   ) {}
 
-  async listForWorkspace(workspaceId: string, userId: string) {
-    await this.workspacesService.requireMembership(workspaceId, userId);
-    return this.database.models.integrations.find({ workspaceId }).sort({ provider: 1 }).lean();
+  async list(workspaceId: string, userId: string) {
+    await this.access.requireWorkspace(workspaceId, userId, "workspace.read");
+    const rows = await this.db.select().from(workspaceIntegration).where(eq(workspaceIntegration.workspaceId, workspaceId)).orderBy(asc(workspaceIntegration.provider));
+    return rows.map((row) => ({
+      id: row.id,
+      provider: row.provider,
+      name: row.name,
+      enabled: row.enabled,
+      webhookHint: maskWebhook(row.webhookUrl),
+      updatedAt: row.updatedAt
+    }));
   }
 
-  async upsert(
-    workspaceId: string,
-    provider: "slack" | "teams",
-    input: { name: string; webhookUrl: string; enabled: boolean },
-    user: UserContext
-  ) {
-    await this.workspacesService.requireMembership(workspaceId, user.id, ["owner"]);
-    const workspace = await this.workspacesService.findById(workspaceId);
-    if (!workspace) {
-      throw new NotFoundException("Workspace not found");
-    }
-
-    const integration = await this.database.models.integrations.findOneAndUpdate(
-      { workspaceId, provider },
-      {
-        workspaceId,
-        provider,
-        name: input.name,
-        webhookUrl: input.webhookUrl,
-        enabled: input.enabled,
-        updatedBy: user.id,
-        createdBy: user.id
-      },
-      { upsert: true, new: true }
-    );
-
-    return integration;
+  async upsert(workspaceId: string, provider: Provider, input: { name: string; webhookUrl: string; enabled: boolean }, user: AuthenticatedUser) {
+    await this.access.requireWorkspace(workspaceId, user.id, "integration.manage");
+    assertWebhookAllowed(provider, input.webhookUrl);
+    const [row] = await this.db
+      .insert(workspaceIntegration)
+      .values({ workspaceId, provider, ...input, createdBy: user.id, updatedBy: user.id })
+      .onConflictDoUpdate({
+        target: [workspaceIntegration.workspaceId, workspaceIntegration.provider],
+        set: { ...input, updatedBy: user.id }
+      })
+      .returning();
+    return { id: row!.id, provider: row!.provider, name: row!.name, enabled: row!.enabled, webhookHint: maskWebhook(row!.webhookUrl), updatedAt: row!.updatedAt };
   }
 
-  async remove(workspaceId: string, provider: "slack" | "teams", userId: string) {
-    await this.workspacesService.requireMembership(workspaceId, userId, ["owner"]);
-    const result = await this.database.models.integrations.deleteOne({ workspaceId, provider });
-    if (result.deletedCount === 0) {
+  async remove(workspaceId: string, provider: Provider, userId: string) {
+    await this.access.requireWorkspace(workspaceId, userId, "integration.manage");
+    const rows = await this.db
+      .delete(workspaceIntegration)
+      .where(and(eq(workspaceIntegration.workspaceId, workspaceId), eq(workspaceIntegration.provider, provider)))
+      .returning({ id: workspaceIntegration.id });
+    if (rows.length === 0) {
       throw new NotFoundException("Integration not found");
     }
   }
 
-  async sendMessage(
-    workspaceId: string,
-    provider: "slack" | "teams",
-    input: { title: string; summary: string; documentUrl: string },
-    userId: string
-  ) {
-    await this.workspacesService.requireMembership(workspaceId, userId);
-    const integration = await this.database.models.integrations.findOne({ workspaceId, provider, enabled: true }).lean();
+  async send(workspaceId: string, provider: Provider, input: { title: string; summary: string; documentUrl: string }, userId: string) {
+    await this.access.requireWorkspace(workspaceId, userId, "integration.send");
+    const [integration] = await this.db
+      .select()
+      .from(workspaceIntegration)
+      .where(and(eq(workspaceIntegration.workspaceId, workspaceId), eq(workspaceIntegration.provider, provider), eq(workspaceIntegration.enabled, true)))
+      .limit(1);
     if (!integration) {
       throw new NotFoundException("Integration not configured");
     }
-
+    assertWebhookAllowed(provider, integration.webhookUrl);
     const response = await fetch(integration.webhookUrl, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(buildPayload(provider, integration.name, input))
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(buildPayload(provider, integration.name, input)),
+      redirect: "error",
+      signal: AbortSignal.timeout(8000)
     });
-
     if (!response.ok) {
-      throw new Error(`Failed to deliver ${provider} notification`);
+      throw new BadRequestException(`${provider} rejected the notification (${response.status})`);
     }
-
-    return {
-      provider,
-      delivered: true
-    };
+    return { provider, delivered: true };
   }
 }
 
-function buildPayload(
-  provider: "slack" | "teams",
-  integrationName: string,
-  input: { title: string; summary: string; documentUrl: string }
-) {
+function buildPayload(provider: Provider, integrationName: string, input: { title: string; summary: string; documentUrl: string }) {
   if (provider === "slack") {
     return {
       text: `SyncSpace update from ${integrationName}`,
       blocks: [
-        {
-          type: "header",
-          text: {
-            type: "plain_text",
-            text: input.title
-          }
-        },
-        {
-          type: "section",
-          text: {
-            type: "mrkdwn",
-            text: input.summary
-          }
-        },
-        {
-          type: "context",
-          elements: [
-            {
-              type: "mrkdwn",
-              text: `<${input.documentUrl}|Open the document>`
-            }
-          ]
-        }
+        { type: "header", text: { type: "plain_text", text: input.title } },
+        { type: "section", text: { type: "mrkdwn", text: input.summary } },
+        { type: "context", elements: [{ type: "mrkdwn", text: `<${input.documentUrl}|Open the document>` }] }
       ]
     };
   }
-
   return {
     "@type": "MessageCard",
     "@context": "https://schema.org/extensions",

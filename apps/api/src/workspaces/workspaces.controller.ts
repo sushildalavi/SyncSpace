@@ -1,58 +1,122 @@
-import { Body, Controller, Delete, Get, Inject, Param, Post, Put, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, Inject, Ip, Param, Patch, Post, Put } from "@nestjs/common";
+import {
+  MemberInviteSchema,
+  MemberRoleUpdateSchema,
+  WorkspaceCreateSchema,
+  WorkspaceUpdateSchema,
+  type MemberInviteInput,
+  type WorkspaceCreateInput
+} from "@syncspace/contracts";
+import { z } from "zod";
+import type { AuthenticatedUser } from "../auth/session.guard.js";
 import { CurrentUser } from "../common/current-user.decorator.js";
-import { JwtAuthGuard } from "../common/jwt-auth.guard.js";
-import { WorkspaceRoles } from "../common/roles.decorator.js";
-import { WorkspaceRoleGuard } from "../common/workspace-role.guard.js";
-import { CreateWorkspaceDto, InviteMemberDto, UpdateMemberRoleDto } from "./dto.js";
+import { ZodPipe } from "../common/zod.pipe.js";
 import { WorkspacesService } from "./workspaces.service.js";
 
-@Controller("workspaces")
-@UseGuards(JwtAuthGuard)
+const TokenSchema = z.object({ token: z.string().min(16).max(200) });
+
+@Controller()
 export class WorkspacesController {
-  constructor(@Inject(WorkspacesService) private readonly workspacesService: WorkspacesService) {}
+  constructor(@Inject(WorkspacesService) private readonly workspaces: WorkspacesService) {}
 
-  @Get()
-  list(@CurrentUser() user: { id: string }) {
-    return this.workspacesService.listForUser(user.id);
+  @Get("workspaces")
+  list(@CurrentUser() user: AuthenticatedUser) {
+    return this.workspaces.listForUser(user.id);
   }
 
-  @Post()
-  create(@Body() body: CreateWorkspaceDto, @CurrentUser() user: { id: string; email: string; displayName: string }) {
-    return this.workspacesService.create(body, user);
+  @Post("workspaces")
+  create(@Body(new ZodPipe(WorkspaceCreateSchema)) body: WorkspaceCreateInput, @CurrentUser() user: AuthenticatedUser, @Ip() ip: string) {
+    return this.workspaces.create(body.name, user, ip);
   }
 
-  @Get(":workspaceId")
-  async get(@Param("workspaceId") workspaceId: string, @CurrentUser() user: { id: string }) {
-    await this.workspacesService.requireMembership(workspaceId, user.id);
-    return this.workspacesService.findById(workspaceId);
+  @Get("workspaces/:workspaceId")
+  get(@Param("workspaceId") workspaceId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.workspaces.get(workspaceId, user.id);
   }
 
-  @UseGuards(WorkspaceRoleGuard)
-  @WorkspaceRoles("owner")
-  @Post(":workspaceId/members")
-  invite(
+  @Patch("workspaces/:workspaceId")
+  rename(
     @Param("workspaceId") workspaceId: string,
-    @Body() body: InviteMemberDto,
-    @CurrentUser() user: { id: string }
+    @Body(new ZodPipe(WorkspaceUpdateSchema)) body: { name: string },
+    @CurrentUser() user: AuthenticatedUser
   ) {
-    return this.workspacesService.inviteMember(workspaceId, body.email, body.role, user.id);
+    return this.workspaces.rename(workspaceId, user, body.name);
   }
 
-  @UseGuards(WorkspaceRoleGuard)
-  @WorkspaceRoles("owner")
-  @Put(":workspaceId/members/:userId")
+  @Delete("workspaces/:workspaceId")
+  @HttpCode(204)
+  async archive(@Param("workspaceId") workspaceId: string, @CurrentUser() user: AuthenticatedUser, @Ip() ip: string) {
+    await this.workspaces.archive(workspaceId, user, ip);
+  }
+
+  @Get("workspaces/:workspaceId/members")
+  members(@Param("workspaceId") workspaceId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.workspaces.listMembers(workspaceId, user.id);
+  }
+
+  @Put("workspaces/:workspaceId/members/:userId")
   updateRole(
     @Param("workspaceId") workspaceId: string,
     @Param("userId") userId: string,
-    @Body() body: UpdateMemberRoleDto
+    @Body(new ZodPipe(MemberRoleUpdateSchema)) body: { role: "owner" | "editor" | "viewer" },
+    @CurrentUser() user: AuthenticatedUser,
+    @Ip() ip: string
   ) {
-    return this.workspacesService.updateMemberRole(workspaceId, userId, body.role);
+    return this.workspaces.updateMemberRole(workspaceId, user, userId, body.role, ip);
   }
 
-  @UseGuards(WorkspaceRoleGuard)
-  @WorkspaceRoles("owner")
-  @Delete(":workspaceId/members/:userId")
-  removeMember(@Param("workspaceId") workspaceId: string, @Param("userId") userId: string) {
-    return this.workspacesService.removeMember(workspaceId, userId);
+  @Delete("workspaces/:workspaceId/members/:userId")
+  @HttpCode(204)
+  async removeMember(
+    @Param("workspaceId") workspaceId: string,
+    @Param("userId") userId: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Ip() ip: string
+  ) {
+    await this.workspaces.removeMember(workspaceId, user, userId, ip);
+  }
+
+  @Get("workspaces/:workspaceId/invitations")
+  invitations(@Param("workspaceId") workspaceId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.workspaces.listInvitations(workspaceId, user.id);
+  }
+
+  @Post("workspaces/:workspaceId/invitations")
+  invite(
+    @Param("workspaceId") workspaceId: string,
+    @Body(new ZodPipe(MemberInviteSchema)) body: MemberInviteInput,
+    @CurrentUser() user: AuthenticatedUser,
+    @Ip() ip: string
+  ) {
+    return this.workspaces.invite(workspaceId, user, body.email, body.role, ip);
+  }
+
+  @Delete("workspaces/:workspaceId/invitations/:invitationId")
+  @HttpCode(204)
+  async revoke(@Param("workspaceId") workspaceId: string, @Param("invitationId") invitationId: string, @CurrentUser() user: AuthenticatedUser) {
+    await this.workspaces.revokeInvitation(workspaceId, invitationId, user);
+  }
+
+  @Get("invitations")
+  mine(@CurrentUser() user: AuthenticatedUser) {
+    return this.workspaces.listMine(user);
+  }
+
+  @Post("invitations/preview")
+  @HttpCode(200)
+  preview(@Body(new ZodPipe(TokenSchema)) body: { token: string }, @CurrentUser() user: AuthenticatedUser) {
+    return this.workspaces.previewToken(body.token, user);
+  }
+
+  @Post("invitations/accept")
+  @HttpCode(200)
+  acceptByToken(@Body(new ZodPipe(TokenSchema)) body: { token: string }, @CurrentUser() user: AuthenticatedUser, @Ip() ip: string) {
+    return this.workspaces.acceptByToken(body.token, user, ip);
+  }
+
+  @Post("invitations/:invitationId/accept")
+  @HttpCode(200)
+  acceptById(@Param("invitationId") invitationId: string, @CurrentUser() user: AuthenticatedUser, @Ip() ip: string) {
+    return this.workspaces.acceptById(invitationId, user, ip);
   }
 }

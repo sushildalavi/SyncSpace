@@ -1,129 +1,137 @@
 # SyncSpace
 
-SyncSpace is a real-time collaborative workspace for teams that need live editing, reliable history, and a straightforward path from local development to production.
+**Real-time collaborative documents with offline editing, live cursors, role-based sharing and secure sign-in (email and Google).**
+Full-stack TypeScript: Next.js · NestJS · PostgreSQL · Yjs · Redis · Better Auth.
 
-It combines a Next.js frontend, a NestJS API, MongoDB for persistence, Redis Streams for fanout, and Yjs for conflict-free collaboration.
+![Two people editing the same document, with a live cursor and presence avatars](docs/screenshots/editor-collaboration-light.png)
 
-## Why it exists
+## What to look at first
 
-Collaborative tools tend to split into two awkward extremes: fast demos that fall apart under real use, or heavy systems that are painful to run and harder to trust.
+| If you have 2 minutes | Where |
+| --- | --- |
+| Watch two browsers edit one document | [Demo walkthrough](#demo-walkthrough) |
+| See how permissions are enforced on live sockets | [`collaboration.service.ts`](apps/api/src/collaboration/collaboration.service.ts) · [tests](apps/api/test/collaboration.service.spec.ts) |
+| See how multi-server delivery works | [Architecture](docs/architecture/overview.md) · [ADR 0004](docs/adr/0004-stream-fanout.md) |
+| Numbers | [Benchmark](docs/benchmarks/collaboration.md): 280 clients on two API instances, 4,000 updates, 0 divergence, p95 ack ≈ 64 ms. [Fault injection](docs/benchmarks/fault-injection.md): survives Redis loss and a crash |
+| What was wrong before, and what changed | [Baseline and outcome](docs/modernization/baseline.md) |
 
-SyncSpace is meant to sit in the middle. It is built to be understandable, testable, and ready for multi-user editing without hiding the hard parts.
+## Features
 
-## What’s included
+- **Collaborative rich-text editor** (Tiptap on Yjs): headings, bold/italic/underline/strike, lists, quotes, code, links, keyboard shortcuts, remote cursors with names, presence avatars.
+- **Honest sync state**: *Saved* appears only after the server acknowledged persistence. *Offline*, *Reconnecting* and *View only* are real connection and role states.
+- **Offline-first**: edits made offline are queued in IndexedDB, survive a reload, and replay idempotently on reconnect.
+- **Workspaces and roles** (Owner / Editor / Viewer) with invitations by email, live role changes and last-owner protection. Removing a member or revoking a session closes their open documents immediately.
+- **Version history** with read-only previews of any past version and **one-click restore**. A restore is saved as a new version, so it can itself be undone. **Favorites, recents, search and a ⌘K command menu.**
+- **Account security**: Argon2id passwords, email verification, password reset, database-backed sessions with a per-device list and revocation, **Google sign-in** with explicit-only account linking, security activity log.
+- **Design system**: light and dark themes, tokenised colour/type/radius/shadow/motion/focus, responsive down to 375 px, axe-scanned against WCAG 2.2 AA rules, reduced-motion support.
 
-- authenticated workspaces with server-enforced access control
-- live document editing over websockets
-- versioned history and snapshotting
-- offline-safe client queuing
-- shared contracts across the web app, API, and collaboration utilities
-- unit, integration, and browser coverage
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshots/sign-in-light.png" alt="Sign in"></td>
+<td width="50%"><img src="docs/screenshots/dashboard-dark.png" alt="Dashboard in dark mode"></td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/share-dialog-light.png" alt="Sharing dialog"></td>
+<td><img src="docs/screenshots/security-light.png" alt="Active sessions and security"></td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/editor-collaboration-dark.png" alt="Editor in dark mode"></td>
+<td><img src="docs/screenshots/mobile-editor.png" alt="Editor on a phone" width="240"></td>
+</tr>
+</table>
 
-## How it fits together
+More: [command menu](docs/screenshots/command-menu-light.png) · [members](docs/screenshots/members-light.png) · [version history](docs/screenshots/history-light.png) · [connections](docs/screenshots/connections-light.png) · [mobile navigation](docs/screenshots/mobile-navigation.png)
 
-```mermaid
-flowchart LR
-  Browser["Browser"] --> Web["Next.js app"]
-  Web -->|REST| API["NestJS API"]
-  Web -->|WebSocket| API
-  API --> Mongo[(MongoDB)]
-  API --> Redis[(Redis Streams)]
-  API --> Yjs["Yjs document state"]
-  Redis --> API
+## Quick start
+
+Requires Docker.
+
+```bash
+git clone https://github.com/sushildalavi/SyncSpace.git && cd SyncSpace
+docker compose up -d --build
 ```
 
-## Collaboration flow
+| URL | What |
+| --- | --- |
+| <http://localhost:3000> | The app |
+| <http://localhost:8025> | **Mailpit**: every email (verification, reset, invitations) lands here |
+| <http://localhost:3001/health> | API health (PostgreSQL + Redis) |
 
-```mermaid
-sequenceDiagram
-  autonumber
-  participant U as User
-  participant W as Web
-  participant A as API
-  participant M as MongoDB
-  participant R as Redis
+Compose uses a development-only `BETTER_AUTH_SECRET`. Set your own in `.env` for anything shared. Google sign-in is hidden until you add credentials ([setup guide](docs/auth/google-setup.md)).
 
-  U->>W: Open a document
-  W->>A: Fetch metadata
-  W->>A: Open websocket session
-  A->>M: Validate membership and load state
-  A-->>W: Send snapshot and presence
-  U->>W: Edit content
-  W->>A: Send Yjs update
-  A->>M: Persist update and version
-  A->>R: Publish update event
-  R-->>A: Fan out to other connections
-  A-->>W: Broadcast the change
-```
-
-## Repository structure
-
-```text
-apps/
-  api/        backend API and collaboration gateway
-  web/        frontend application
-  loadtest/   collaboration load harness
-packages/
-  collaboration/ CRDT helpers and sync policy
-  config/         shared environment parsing
-  contracts/      shared validation contracts
-infrastructure/
-  docker/      production Dockerfiles
-```
-
-## Running locally
-
-### Prerequisites
-
-- Node.js 20+
-- pnpm 10+
-- Docker Desktop
-- MongoDB and Redis, or `docker compose`
-
-### Start the stack
+### Local development
 
 ```bash
 cp .env.example .env
-pnpm install
-docker compose up -d
-pnpm dev
+docker compose up -d postgres redis mailpit
+corepack enable && pnpm install        # or: npx pnpm@10.15.1 install
+pnpm --filter @syncspace/api dev       # API on :3001, runs migrations on start
+pnpm --filter @syncspace/web dev       # web on :3000
 ```
 
-Then open the web app and API using the ports defined in `.env`.
+## Demo walkthrough
 
-### Useful commands
+1. Open <http://localhost:3000/sign-up> and create **Ada**. Open Mailpit and click the confirmation link, then sign in.
+2. Name a workspace. Click **New document** and type; use the toolbar or `⌘B`, `⌘⌥1`, `- ` for a list.
+3. In a **private window**, create **Grace** (confirm via Mailpit).
+4. As Ada: **Share → Invite** Grace's email as *Editor*. As Grace, open the invitation link from Mailpit and accept.
+5. Both open the document. Type in each window: edits and cursors with names appear live, with avatars at the top.
+6. **Offline**: in Grace's DevTools → Network, tick *Offline*. The status chip changes to *Offline*; keep typing. Untick it and watch both windows converge.
+7. **Permissions**: as Ada open **Members** and set Grace to *Viewer*. Grace's editor becomes read-only *without a reload*. Remove Grace and her tab shows "access removed".
+8. **Sessions**: Settings → Security lists devices. *Sign out other devices* ends Grace's live connection.
+
+## Architecture
+
+```mermaid
+flowchart LR
+  B[Browser<br/>Next.js · Tiptap · Y.Doc] -- "REST + HttpOnly cookie" --> A1[API instance 1]
+  B -- "WebSocket" --> A2[API instance 2]
+  A1 <-->|XREAD / XADD| R[(Redis Stream)]
+  A2 <-->|XREAD / XADD| R
+  A1 --> P[(PostgreSQL)]
+  A2 --> P
+  A1 -.-> G[Google OIDC]
+```
+
+Details, sequence of a write, and failure behaviour: [docs/architecture/overview.md](docs/architecture/overview.md), [data model](docs/data-model/postgres.md), [REST](docs/api/rest.md), [WebSocket protocol](docs/api/websockets.md), [failure modes](docs/failure-modes.md), [ADRs](docs/adr).
+
+## Repository layout
+
+```
+apps/api         NestJS API, Better Auth, collaboration gateway, Drizzle schema + migrations
+apps/web         Next.js app, design system (src/components/ui), editor (src/components/editor)
+apps/loadtest    Collaboration load generator
+packages/contracts   Zod schemas + the RBAC permission matrix shared by API and web
+packages/config      Environment validation
+e2e/             Playwright suite (+ a protocol-level Google mock)
+docs/            Architecture, ADRs, runbooks, benchmarks, screenshots
+```
+
+## Testing
 
 ```bash
-pnpm lint
-pnpm typecheck
-pnpm test
-pnpm test:e2e
-pnpm build
+pnpm lint && pnpm typecheck && pnpm test      # unit/integration (in-process PostgreSQL)
+docker compose up -d postgres redis mailpit
+docker compose exec postgres psql -U syncspace -d postgres -c "create database syncspace_test"
+pnpm test:e2e                                  # real browsers against the real stack
+scripts/bench.sh                               # multi-instance load test
+scripts/fault-injection.sh                     # Redis pause/flush, frozen instance, kill -9 under load
 ```
 
-## Production notes
+See [docs/testing.md](docs/testing.md). GitHub Actions runs lint, typecheck, unit tests, build, the full Playwright suite and Docker image builds.
 
-- The API owns authentication and membership checks.
-- Collaboration updates are normalized server-side before persistence.
-- Redis Streams lets multiple API instances stay in sync.
-- The client keeps local edits moving even when the connection is unstable.
+## Migrating from the MongoDB version
 
-## Environment variables
+[docs/modernization/migration.md](docs/modernization/migration.md): a read-only, repeatable, verified migrator with a dry-run mode and a rollback plan.
 
-Copy `.env.example` to `.env` and fill in the values for:
+## Limitations
 
-- `DATABASE_URL`
-- `REDIS_URL`
-- `JWT_SECRET`
-- `JWT_EXPIRES_IN`
-- `NEXT_PUBLIC_API_BASE_URL`
+Stated plainly:
 
-## Quality gates
-
-The repository is set up to verify the important paths before release:
-
-- linting
-- type checking
-- API service tests
-- browser-level editor coverage
-
+- **Live Google sign-in has not been exercised** because no Google credentials were available to this project. The OAuth handling is tested end to end against a local OIDC stand-in. Use the [live checklist](docs/auth/google-setup.md#live-verification-checklist) with your own client.
+- **No hosted demo.** There is no public deployment, so run it locally (two commands above).
+- **Fault injection is one scenario on one machine** (Redis pause and flush, a frozen instance, `kill -9`). It found and fixed three real defects, and its limits are listed in [docs/benchmarks/fault-injection.md](docs/benchmarks/fault-injection.md#limits-of-this-test). PostgreSQL failure and long outages are untested.
+- Sharing is per workspace, not per document. There are no public share links.
+- Email change, account deletion and two-factor authentication are not implemented.
+- Accessibility is checked with axe's WCAG 2.2 AA rules plus keyboard tests. Automated tools cover only part of the criteria, and there has been no screen-reader or manual audit.
+- Migrated legacy users are imported as unverified and need to confirm their email if verification is enforced.

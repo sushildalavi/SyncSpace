@@ -1,15 +1,50 @@
 import { z } from "zod";
 
-export const EnvironmentSchema = z.object({
-  DATABASE_URL: z.string().url(),
-  REDIS_URL: z.string().url(),
-  JWT_SECRET: z.string().min(32),
-  JWT_EXPIRES_IN: z.string().min(1),
-  WEB_ORIGIN: z.string().url().default("http://localhost:3000"),
-  NEXT_PUBLIC_API_BASE_URL: z.string().url().default("http://localhost:3001"),
-  API_PORT: z.coerce.number().int().positive().default(3001),
-  WEB_PORT: z.coerce.number().int().positive().default(3000)
-});
+/** Optional settings: an empty string (as docker compose passes for unset variables) means "not configured". */
+const blankToUndefined = (value: unknown) => (typeof value === "string" && value.trim() === "" ? undefined : value);
+
+const booleanFlag = z
+  .enum(["true", "false", "1", "0"])
+  .transform((value) => value === "true" || value === "1");
+
+/** Values that appear in this repository and so are known to everyone. */
+export const KNOWN_PLACEHOLDER_SECRETS = [
+  "dev-only-secret-change-me-0123456789abcdef",
+  "replace-with-a-long-random-string-at-least-32-chars"
+];
+
+export const EnvironmentSchema = z
+  .object({
+    NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+    DATABASE_URL: z.string().url(),
+    REDIS_URL: z.string().url(),
+    /** Used by Better Auth to sign cookies and encrypt secrets. */
+    BETTER_AUTH_SECRET: z.string().min(32),
+    /** Public origin of the API. OAuth callbacks are served from here. */
+    API_BASE_URL: z.string().url().default("http://localhost:3001"),
+    WEB_ORIGIN: z.string().url().default("http://localhost:3000"),
+    API_PORT: z.coerce.number().int().positive().default(3001),
+    WEB_PORT: z.coerce.number().int().positive().default(3000),
+    GOOGLE_CLIENT_ID: z.preprocess(blankToUndefined, z.string().min(1).optional()),
+    GOOGLE_CLIENT_SECRET: z.preprocess(blankToUndefined, z.string().min(1).optional()),
+    SMTP_URL: z.preprocess(blankToUndefined, z.string().url().optional()),
+    MAIL_FROM: z.string().min(3).default("SyncSpace <no-reply@syncspace.local>"),
+    REQUIRE_EMAIL_VERIFICATION: booleanFlag.default("false"),
+    RUN_MIGRATIONS: booleanFlag.default("true"),
+    /** Number of reverse proxies in front of the API (0 = clients connect directly). Controls which IP is trusted. */
+    TRUST_PROXY: z.coerce.number().int().min(0).max(5).default(0),
+    SESSION_TTL_DAYS: z.coerce.number().int().positive().default(7),
+    /** Only read by the one-off MongoDB -> PostgreSQL migrator. */
+    LEGACY_MONGO_URL: z.preprocess(blankToUndefined, z.string().url().optional())
+  })
+  .refine((env) => !(env.NODE_ENV === "production" && KNOWN_PLACEHOLDER_SECRETS.includes(env.BETTER_AUTH_SECRET)), {
+    message: "BETTER_AUTH_SECRET is a publicly known placeholder. Generate one with: openssl rand -base64 32",
+    path: ["BETTER_AUTH_SECRET"]
+  })
+  .refine((env) => Boolean(env.GOOGLE_CLIENT_ID) === Boolean(env.GOOGLE_CLIENT_SECRET), {
+    message: "GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET must be set together",
+    path: ["GOOGLE_CLIENT_SECRET"]
+  });
 
 export type Environment = z.infer<typeof EnvironmentSchema>;
 

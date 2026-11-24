@@ -1,30 +1,15 @@
 import { Inject } from "@nestjs/common";
-import {
-  ConnectedSocket,
-  MessageBody,
-  OnGatewayConnection,
-  OnGatewayDisconnect,
-  SubscribeMessage,
-  WebSocketGateway
-} from "@nestjs/websockets";
-import { IncomingMessage } from "http";
-import { WebSocket } from "ws";
+import { OnGatewayConnection, WebSocketGateway } from "@nestjs/websockets";
+import type { IncomingMessage } from "node:http";
+import type { WebSocket } from "ws";
+import { COLLAB_LIMITS } from "@syncspace/contracts";
 import { CollaborationService } from "./collaboration.service.js";
 
-@WebSocketGateway({ path: "/collaboration" })
-export class CollaborationGateway implements OnGatewayConnection, OnGatewayDisconnect {
-  constructor(@Inject(CollaborationService) private readonly collaborationService: CollaborationService) {}
+@WebSocketGateway({ path: "/collaboration", maxPayload: COLLAB_LIMITS.maxMessageBytes })
+export class CollaborationGateway implements OnGatewayConnection {
+  constructor(@Inject(CollaborationService) private readonly collaboration: CollaborationService) {}
 
   handleConnection(client: WebSocket, request: IncomingMessage): void {
-    void this.collaborationService.handleConnection(client, request);
-  }
-
-  handleDisconnect(client: WebSocket): void {
-    this.collaborationService.handleDisconnect(client);
-  }
-
-  @SubscribeMessage("message")
-  handleMessage(@ConnectedSocket() client: WebSocket, @MessageBody() message: string): void {
-    void this.collaborationService.handleClientMessage(client, message);
+    void this.collaboration.handleConnection(client, request).catch(() => client.close(1011, "Server error"));
   }
 }

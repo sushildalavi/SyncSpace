@@ -1,0 +1,187 @@
+import { Algorithm, hash, verify } from "@node-rs/argon2";
+import bcrypt from "bcryptjs";
+import { betterAuth } from "better-auth";
+import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { eq } from "drizzle-orm";
+import type { Db } from "../db/database.module.js";
+import * as schema from "../db/schema.js";
+import { actionEmail } from "../mail/templates.js";
+import type { MailMessage } from "../mail/mailer.service.js";
+
+export type AuthDeps = {
+  db: Db;
+  env: {
+    NODE_ENV: string;
+    BETTER_AUTH_SECRET: string;
+    API_BASE_URL: string;
+    WEB_ORIGIN: string;
+    GOOGLE_CLIENT_ID?: string | undefined;
+    GOOGLE_CLIENT_SECRET?: string | undefined;
+    REQUIRE_EMAIL_VERIFICATION: boolean;
+    SESSION_TTL_DAYS: number;
+  };
+  sendMail: (message: MailMessage) => Promise<void>;
+  onSessionRevoked?: (session: { id: string; userId: string }) => void;
+  audit?: (event: { type: string; userId: string; metadata?: Record<string, unknown>; ip?: string | null }) => void;
+};
+
+/** OWASP-recommended Argon2id parameters (m=19 MiB, t=2, p=1). */
+const ARGON2 = { algorithm: Algorithm.Argon2id, memoryCost: 19_456, timeCost: 2, parallelism: 1 } as const;
+
+export function createAuth({ db, env, sendMail, onSessionRevoked, audit }: AuthDeps) {
+  const googleEnabled = Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET);
+  const production = env.NODE_ENV === "production";
+
+  return betterAuth({
+    appName: "SyncSpace",
+    baseURL: env.API_BASE_URL,
+    basePath: "/api/auth",
+    secret: env.BETTER_AUTH_SECRET,
+    trustedOrigins: [env.WEB_ORIGIN],
+    // OAuth failures (cancelled consent, bad state, unlinked account) land on a page that explains them.
+    onAPIError: { errorURL: `${env.WEB_ORIGIN}/auth/error` },
+    database: drizzleAdapter(db, {
+      provider: "pg",
+      schema: {
+        user: schema.user,
+        session: schema.session,
+        account: schema.account,
+        verification: schema.verification,
+        rateLimit: schema.rateLimit
+      }
+    }),
+    advanced: {
+      database: { generateId: () => crypto.randomUUID() },
+      useSecureCookies: production,
+      defaultCookieAttributes: { httpOnly: true, sameSite: "lax", secure: production }
+    },
+    session: {
+      expiresIn: 60 * 60 * 24 * env.SESSION_TTL_DAYS,
+      updateAge: 60 * 60 * 24,
+      // No cookie cache: every request reads the database, so revocation is immediate.
+      cookieCache: { enabled: false }
+    },
+    rateLimit: { enabled: true, storage: "database", window: 60, max: 100 },
+    emailAndPassword: {
+      enabled: true,
+      minPasswordLength: 10,
+      maxPasswordLength: 128,
+      requireEmailVerification: env.REQUIRE_EMAIL_VERIFICATION,
+      revokeSessionsOnPasswordReset: true,
+      onPasswordReset: async ({ user }) => {
+        audit?.({ type: "auth.password_reset", userId: user.id });
+      },
+      password: {
+        hash: (password) => hash(password, ARGON2),
+        verify: async ({ hash: stored, password }) => {
+          if (stored.startsWith("$2")) {
+            // Accounts migrated from the legacy bcrypt system: verify, then upgrade to Argon2id.
+            const ok = await bcrypt.compare(password, stored);
+            if (ok) {
+              await db.update(schema.account).set({ password: await hash(password, ARGON2) }).where(eq(schema.account.password, stored));
+            }
+            return ok;
+          }
+          return verify(stored, password);
+        }
+      },
+      sendResetPassword: async ({ user, url }) => {
+        const body = actionEmail({
+          heading: "Reset your SyncSpace password",
+          body: "Use the button below to choose a new password. The link expires in one hour.",
+          actionLabel: "Reset password",
+          url
+        });
+        await sendMail({ to: user.email, subject: "Reset your SyncSpace password", ...body });
+      }
+    },
+    emailVerification: {
+      sendOnSignUp: true,
+      sendOnSignIn: true,
+      autoSignInAfterVerification: true,
+      sendVerificationEmail: async ({ user, url: rawUrl }) => {
+        // Links created by an unverified sign-in attempt carry no callback. Always return people to the app.
+        const link = new URL(rawUrl);
+        const callback = link.searchParams.get("callbackURL");
+        if (!callback || callback === "/") {
+          link.searchParams.set("callbackURL", `${env.WEB_ORIGIN}/verify-email?status=success`);
+        }
+        const url = link.toString();
+        const body = actionEmail({
+          heading: "Confirm your email address",
+          body: "Confirm this address to finish setting up your SyncSpace account.",
+          actionLabel: "Confirm email",
+          url
+        });
+        await sendMail({ to: user.email, subject: "Confirm your SyncSpace email", ...body });
+      }
+    },
+    socialProviders: googleEnabled
+      ? {
+          google: {
+            clientId: env.GOOGLE_CLIENT_ID!,
+            clientSecret: env.GOOGLE_CLIENT_SECRET!,
+            // Authentication only: openid, email and profile. No Gmail, Drive or Calendar scopes.
+            prompt: "select_account",
+            includeGrantedScopes: false
+          }
+        }
+      : {},
+    account: {
+      accountLinking: {
+        enabled: true,
+        // An email match must never merge identities by itself. Google can only be attached
+        // from inside an authenticated session (the explicit "Connect Google" action).
+        disableImplicitLinking: true,
+        trustedProviders: [],
+        allowDifferentEmails: true
+      }
+    },
+    databaseHooks: {
+      account: {
+        // We only need the identity, not the ability to call Google on the user's behalf.
+        create: {
+          before: async (account) => ({ data: stripProviderTokens(account) }),
+          after: async (account) => {
+            if (account.providerId !== "credential") {
+              audit?.({ type: "auth.provider_linked", userId: account.userId, metadata: { provider: account.providerId } });
+            }
+          }
+        },
+        update: { before: async (account) => ({ data: stripProviderTokens(account) }) },
+        delete: {
+          after: async (account) => {
+            if (account?.providerId !== "credential") {
+              audit?.({ type: "auth.provider_unlinked", userId: account!.userId, metadata: { provider: account!.providerId } });
+            }
+          }
+        }
+      },
+      session: {
+        create: {
+          after: async (session) => {
+            audit?.({ type: "auth.signed_in", userId: session.userId, ip: session.ipAddress ?? null, metadata: { userAgent: session.userAgent ?? null } });
+          }
+        },
+        delete: {
+          after: async (session) => {
+            onSessionRevoked?.({ id: session.id, userId: session.userId });
+            audit?.({ type: "auth.session_ended", userId: session.userId });
+          }
+        }
+      }
+    }
+  });
+}
+
+function stripProviderTokens<T extends Record<string, unknown>>(account: T): T {
+  const next: Record<string, unknown> = { ...account };
+  for (const key of ["accessToken", "refreshToken", "idToken", "accessTokenExpiresAt", "refreshTokenExpiresAt"]) {
+    if (key in next) {
+      next[key] = null;
+    }
+  }
+  return next as T;
+}
+
+export type Auth = ReturnType<typeof createAuth>;

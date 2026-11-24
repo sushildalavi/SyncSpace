@@ -1,29 +1,60 @@
 services:
-  mongo:
-    image: mongo:7
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: syncspace
+      POSTGRES_PASSWORD: syncspace
+      POSTGRES_DB: syncspace
     ports:
-      - "27017:27017"
+      - "127.0.0.1:5432:5432"
     volumes:
-      - mongo_data:/data/db
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U syncspace"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
 
   redis:
-    image: redis:7
+    image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # Catches outgoing email (verification, password reset, invitations). UI at http://localhost:8025
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025"
 
   api:
     build:
       context: .
       dockerfile: infrastructure/docker/api.Dockerfile
     environment:
-      DATABASE_URL: mongodb://mongo:27017/syncspace
+      NODE_ENV: development
+      DATABASE_URL: postgres://syncspace:syncspace@postgres:5432/syncspace
       REDIS_URL: redis://redis:6379
-      JWT_SECRET: replace-me-with-a-long-random-string
-      JWT_EXPIRES_IN: 1d
+      # Development default so `docker compose up` just works. It is public: set BETTER_AUTH_SECRET in .env for anything
+      # reachable by other people (the API refuses this value when NODE_ENV=production).
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-dev-only-secret-change-me-0123456789abcdef}
+      API_BASE_URL: http://localhost:3001
+      WEB_ORIGIN: http://localhost:3000
       API_PORT: 3001
+      SMTP_URL: smtp://mailpit:1025
+      REQUIRE_EMAIL_VERIFICATION: "true"
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
     depends_on:
-      - mongo
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     ports:
       - "3001:3001"
 
@@ -31,8 +62,9 @@ services:
     build:
       context: .
       dockerfile: infrastructure/docker/web.Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE_URL: http://localhost:3001
     environment:
-      NEXT_PUBLIC_API_BASE_URL: http://api:3001
       WEB_PORT: 3000
     depends_on:
       - api
@@ -40,4 +72,4 @@ services:
       - "3000:3000"
 
 volumes:
-  mongo_data:
+  postgres_data:
