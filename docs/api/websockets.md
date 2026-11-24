@@ -11,6 +11,7 @@ Authentication is the session **cookie** (sent automatically; credentials in the
 | --- | --- |
 | `document.update` | `{ documentId, updateId, payload }`. `payload` is a base64 Yjs *incremental* update. **No version is accepted.** |
 | `presence.update` | `{ status: "active" \| "idle", cursor?: object }` |
+| `sync.request` | `{}`. Ask for the full state again (sent automatically when the client notices it missed events). |
 
 ## Server → client
 
@@ -20,6 +21,7 @@ Authentication is the session **cookie** (sent automatically; credentials in the
 | `document.ack` | `{ updateId, version, duplicate }`, persisted |
 | `document.rejected` | `{ updateId, reason: "read_only" \| "malformed" \| "wrong_document" }` |
 | `document.update` | `{ documentId, updateId, version, payload, actorId }` from someone else |
+| `sync.check` | `{ documentId, version }`, the latest persisted version, sent every 10 s. A client whose highest *contiguous* version is lower on two checks in a row should send `sync.request`. |
 | `access.updated` | `{ role }`, your role changed live |
 | `access.revoked` | `{ code, reason }`, followed by close |
 | `presence.sync` / `presence.state` / `presence.leave` | other collaborators (identity stamped by the server) |

@@ -44,7 +44,7 @@ export default function WorkspacePage() {
         eyebrow={workspace.data ? <Badge tone={workspace.data.role === "owner" ? "primary" : "neutral"}>{RoleBadgeLabel(workspace.data.role)}</Badge> : null}
         description={workspace.data && !canCreate ? "You have view-only access in this workspace." : undefined}
         actions={
-          canCreate ? (
+          canCreate && (documents.data?.length ?? 0) > 0 ? (
             <Button variant="primary" onClick={newDocument} loading={create.isPending}>
               <FilePlus2 aria-hidden /> New document
             </Button>

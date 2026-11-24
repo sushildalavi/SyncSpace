@@ -12,7 +12,7 @@ Full-stack TypeScript: Next.js · NestJS · PostgreSQL · Yjs · Redis · Better
 | Watch two browsers edit one document | [Demo walkthrough](#demo-walkthrough) |
 | See how permissions are enforced on live sockets | [`collaboration.service.ts`](apps/api/src/collaboration/collaboration.service.ts) · [tests](apps/api/test/collaboration.service.spec.ts) |
 | See how multi-server delivery works | [Architecture](docs/architecture/overview.md) · [ADR 0004](docs/adr/0004-stream-fanout.md) |
-| Numbers | [Benchmark](docs/benchmarks/collaboration.md): 280 clients on two API instances, 4,000 updates, 0 divergence, p95 ack ≈ 64 ms |
+| Numbers | [Benchmark](docs/benchmarks/collaboration.md): 280 clients on two API instances, 4,000 updates, 0 divergence, p95 ack ≈ 64 ms. [Fault injection](docs/benchmarks/fault-injection.md): survives Redis loss and a crash |
 | What was wrong before, and what changed | [Baseline and outcome](docs/modernization/baseline.md) |
 
 ## Features
@@ -21,7 +21,7 @@ Full-stack TypeScript: Next.js · NestJS · PostgreSQL · Yjs · Redis · Better
 - **Honest sync state**: *Saved* appears only after the server acknowledged persistence. *Offline*, *Reconnecting* and *View only* are real connection and role states.
 - **Offline-first**: edits made offline are queued in IndexedDB, survive a reload, and replay idempotently on reconnect.
 - **Workspaces and roles** (Owner / Editor / Viewer) with invitations by email, live role changes and last-owner protection. Removing a member or revoking a session closes their open documents immediately.
-- **Version history** with read-only previews of any past version. **Favorites, recents, search and a ⌘K command menu.**
+- **Version history** with read-only previews of any past version and **one-click restore**. A restore is saved as a new version, so it can itself be undone. **Favorites, recents, search and a ⌘K command menu.**
 - **Account security**: Argon2id passwords, email verification, password reset, database-backed sessions with a per-device list and revocation, **Google sign-in** with explicit-only account linking, security activity log.
 - **Design system**: light and dark themes, tokenised colour/type/radius/shadow/motion/focus, responsive down to 375 px, axe-scanned against WCAG 2.2 AA rules, reduced-motion support.
 
@@ -115,6 +115,7 @@ docker compose up -d postgres redis mailpit
 docker compose exec postgres psql -U syncspace -d postgres -c "create database syncspace_test"
 pnpm test:e2e                                  # real browsers against the real stack
 scripts/bench.sh                               # multi-instance load test
+scripts/fault-injection.sh                     # Redis pause/flush, frozen instance, kill -9 under load
 ```
 
 See [docs/testing.md](docs/testing.md). GitHub Actions runs lint, typecheck, unit tests, build, the full Playwright suite and Docker image builds.
@@ -129,8 +130,7 @@ Stated plainly:
 
 - **Live Google sign-in has not been exercised** because no Google credentials were available to this project. The OAuth handling is tested end to end against a local OIDC stand-in. Use the [live checklist](docs/auth/google-setup.md#live-verification-checklist) with your own client.
 - **No hosted demo.** There is no public deployment, so run it locally (two commands above).
-- **Fault injection under load** (killing an instance, pausing Redis mid-run) has not been run, only designed and unit-tested. See the [benchmark notes](docs/benchmarks/collaboration.md#not-done).
-- **No "restore this version"**: history is browsable and previewable, not revertible.
+- **Fault injection is one scenario on one machine** (Redis pause and flush, a frozen instance, `kill -9`). It found and fixed three real defects, and its limits are listed in [docs/benchmarks/fault-injection.md](docs/benchmarks/fault-injection.md#limits-of-this-test). PostgreSQL failure and long outages are untested.
 - Sharing is per workspace, not per document. There are no public share links.
 - Email change, account deletion and two-factor authentication are not implemented.
 - Accessibility is checked with axe's WCAG 2.2 AA rules plus keyboard tests. Automated tools cover only part of the criteria, and there has been no screen-reader or manual audit.

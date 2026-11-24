@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronsUpDown, Clock, FileText, Home, Check, Plus, Search, Settings, Star, Users } from "lucide-react";
+import { ChevronsUpDown, FileText, Home, Check, Plus, Search, Settings, Star, Users } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -9,7 +9,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import { Kbd } from "@/components/ui/kbd";
 import { Logo } from "@/components/ui/logo";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useCreateDocument, useDocuments, useFavorites, useMyInvitations, useRecent, useWorkspaces } from "@/lib/queries";
+import { useCreateDocument, useDocuments, useFavorites, useMyInvitations, useWorkspaces } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 import { useUi } from "@/stores/ui";
 import { UserMenu } from "./user-menu";
@@ -43,7 +43,7 @@ export function SidebarContent({ onCreateWorkspace }: { onCreateWorkspace: () =>
   const current = workspaces.data?.find((w) => w.id === currentId);
   const documents = useDocuments(currentId ?? "");
   const favorites = useFavorites();
-  const recent = useRecent();
+  const favoriteIds = new Set((favorites.data ?? []).map((doc) => doc.id));
   const invitations = useMyInvitations();
   const createDocument = useCreateDocument(currentId ?? "");
   const setLast = useUi((s) => s.setLastWorkspaceId);
@@ -156,19 +156,6 @@ export function SidebarContent({ onCreateWorkspace }: { onCreateWorkspace: () =>
           </>
         ) : null}
 
-        {recent.data && recent.data.length > 0 ? (
-          <>
-            <SectionLabel>Recent</SectionLabel>
-            <div className="space-y-0.5">
-              {recent.data.slice(0, 5).map((doc) => (
-                <NavLink key={doc.id} href={`/d/${doc.id}`} icon={Clock}>
-                  {doc.title}
-                </NavLink>
-              ))}
-            </div>
-          </>
-        ) : null}
-
         {current ? (
           <>
             <SectionLabel>{current.name}</SectionLabel>
@@ -179,7 +166,7 @@ export function SidebarContent({ onCreateWorkspace }: { onCreateWorkspace: () =>
               </div>
             ) : documents.data && documents.data.length > 0 ? (
               <div className="space-y-0.5">
-                {documents.data.slice(0, 8).map((doc) => (
+                {documents.data.filter((doc) => !favoriteIds.has(doc.id)).slice(0, 8).map((doc) => (
                   <NavLink key={doc.id} href={`/d/${doc.id}`} icon={FileText}>
                     {doc.title}
                   </NavLink>

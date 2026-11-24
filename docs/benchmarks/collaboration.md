@@ -41,5 +41,4 @@ show (updates reaching only one instance, client-chosen versions, snapshot count
 
 ## Not done
 
-Fault injection (killing an instance or pausing Redis mid-run) was **not** performed under load. The behaviour is designed
-and unit-tested (`docs/failure-modes.md`), but not measured. Long soak runs and multi-machine runs are also untested.
+Fault injection now has its own run: [fault-injection.md](fault-injection.md). Long soak runs and multi-machine runs are still untested.

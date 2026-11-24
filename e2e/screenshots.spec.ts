@@ -11,7 +11,15 @@ test.skip(!process.env.SCREENSHOTS, "set SCREENSHOTS=1 to regenerate screenshots
 test.describe.configure({ mode: "serial" });
 
 const out = process.env.SCREENSHOT_DIR ?? path.join(process.cwd(), "docs/screenshots");
-const shot = (page: Page, name: string, fullPage = false) => page.screenshot({ path: path.join(out, `${name}.png`), fullPage, animations: "disabled" });
+async function settle(page: Page) {
+  // never capture a half-loaded screen: wait for skeletons to go and layout to stop moving
+  await expect(page.locator(".skeleton")).toHaveCount(0, { timeout: 10_000 });
+  await page.waitForTimeout(250);
+}
+const shot = async (page: Page, name: string, fullPage = false) => {
+  await settle(page);
+  return page.screenshot({ path: path.join(out, `${name}.png`), fullPage, animations: "disabled" });
+};
 const body = (page: Page) => page.getByRole("textbox", { name: "Document body" });
 
 async function themed(browser: Browser, scheme: "light" | "dark", viewport: { width: number; height: number }) {
@@ -110,6 +118,8 @@ test("product tour (desktop, light and dark)", async ({ browser }) => {
   await shot(page, "connections-light");
   await page.goto(`/d/${ids[0]}/history`);
   await expect(page.getByRole("navigation", { name: "Versions" })).toBeVisible();
+  await page.getByRole("navigation", { name: "Versions" }).getByRole("button").nth(1).click(); // an older version, so Restore is offered
+  await expect(page.getByRole("button", { name: "Restore this version" })).toBeVisible();
   await page.waitForTimeout(500);
   await shot(page, "history-light");
 

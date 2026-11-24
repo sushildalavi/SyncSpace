@@ -83,3 +83,11 @@ replaced by the shared Zod contracts), and the non-functional load test (replace
 Defects found *during* the work (all fixed and tested): verification emails from an unverified sign-in linked to the API origin
 instead of the app; Better Auth rate-limits only when it sees `X-Forwarded-For`, so the API now derives the client IP itself
 (`TRUST_PROXY`); blank optional env vars from docker compose crashed startup.
+
+## Later additions
+
+Version restore and fault injection were added after the first review. Fault injection found three defects that the unit and e2e
+tests had not (silent divergence after lost events, a first fix that tracked the wrong version, and a reconnect storm after long
+outages). Details: `docs/benchmarks/fault-injection.md`. A security review of the branch found two Medium issues, both fixed:
+reset/verification/invitation links were logged in plaintext when SMTP was unset (now only outside production), and publicly known
+placeholder auth secrets (now rejected when `NODE_ENV=production`; dev data stores are bound to localhost).

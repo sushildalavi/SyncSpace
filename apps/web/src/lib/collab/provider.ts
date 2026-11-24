@@ -58,6 +58,14 @@ export class CollabProvider {
   private presenceTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private attempts = 0;
+  private connectedAt = 0;
+  /**
+   * Highest version N such that this client has seen every version up to N (snapshot, remote update or ack).
+   * Tracking the maximum would be wrong: later updates arriving normally would hide a gap left by lost events.
+   */
+  private contiguous = 0;
+  private ahead = new Set<number>();
+  private behindChecks = 0;
   private destroyed = false;
   private readonly listeners = new Set<Listener>();
   private readonly clientId = crypto.randomUUID();
@@ -109,6 +117,12 @@ export class CollabProvider {
     this.flushTimer ??= setTimeout(() => void this.flush(), 50);
   };
 
+  private noteVersion(version: number): void {
+    if (!Number.isFinite(version) || version <= this.contiguous) return;
+    this.ahead.add(version);
+    while (this.ahead.delete(this.contiguous + 1)) this.contiguous += 1;
+  }
+
   private async flush(): Promise<void> {
     this.flushTimer = null;
     if (this.outbox.length === 0) return;
@@ -125,6 +139,31 @@ export class CollabProvider {
     if (this.socket?.readyState === WebSocket.OPEN && this.status.synced && this.status.role !== "viewer") {
       this.socket.send(JSON.stringify({ type: "document.update", payload: { documentId: this.options.documentId, updateId: entry.updateId, payload: entry.payload } }));
     }
+  }
+
+  /**
+   * Re-sends everything the server hasn't acknowledged. After a long outage the backlog can be hundreds of updates;
+   * sent one by one it would exceed the server's message rate limit, get the socket closed, and loop. Yjs updates merge,
+   * and applying an update twice is a no-op, so the whole backlog goes up as ONE update even if some of it had in fact
+   * been persisted before the connection dropped.
+   */
+  private replayPending(): void {
+    if (this.pending.size > 1) {
+      const entries = [...this.pending.values()];
+      const merged: PendingUpdate = {
+        updateId: crypto.randomUUID(),
+        payload: toBase64(Y.mergeUpdates(entries.map((entry) => fromBase64(entry.payload)))),
+        createdAt: entries[0]!.createdAt
+      };
+      for (const entry of entries) {
+        this.pending.delete(entry.updateId);
+        void this.store.remove(entry.updateId);
+      }
+      this.pending.set(merged.updateId, merged);
+      void this.store.put(merged);
+      this.patch({ pending: 1 });
+    }
+    for (const entry of this.pending.values()) this.transmit(entry);
   }
 
   private async restorePending(): Promise<void> {
@@ -149,7 +188,7 @@ export class CollabProvider {
     this.socket = socket;
     socket.onopen = () => {
       if (this.socket !== socket) return;
-      this.attempts = 0;
+      this.connectedAt = Date.now();
       this.patch({ connection: "connected" });
     };
     socket.onmessage = (event) => this.onMessage(String(event.data));
@@ -172,7 +211,11 @@ export class CollabProvider {
     }
     this.patch({ connection: navigator.onLine ? "reconnecting" : "offline", synced: false });
     if (!navigator.onLine) return;
-    const delay = Math.min(15_000, 500 * 2 ** this.attempts) * (0.6 + Math.random() * 0.4);
+    // Only a connection that stayed up for a while counts as healthy. Otherwise a connect-then-drop loop would retry at full speed.
+    if (this.connectedAt && Date.now() - this.connectedAt > 10_000) this.attempts = 0;
+    this.connectedAt = 0;
+    let delay = Math.min(15_000, 500 * 2 ** this.attempts) * (0.6 + Math.random() * 0.4);
+    if (code === CLOSE_CODES.rateLimited) delay = Math.max(delay, 3_000);
     this.attempts += 1;
     this.reconnectTimer = setTimeout(() => this.connect(), delay);
   }
@@ -204,6 +247,12 @@ export class CollabProvider {
       case "document.snapshot": {
         Y.applyUpdate(this.options.doc, fromBase64(String(payload.snapshot)), this);
         this.connectionId = String(payload.connectionId ?? "");
+        // A snapshot contains every version up to its own.
+        this.contiguous = Math.max(this.contiguous, Number(payload.version) || 0);
+        for (const version of this.ahead) if (version <= this.contiguous) this.ahead.delete(version);
+        while (this.ahead.delete(this.contiguous + 1)) this.contiguous += 1;
+        this.behindChecks = 0;
+        const wasSynced = this.status.synced;
         this.patch({ synced: true, role: payload.role as WorkspaceRole, editsRejected: false });
         if (payload.role === "viewer" && this.pending.size > 0) {
           // Queued edits from before this account lost write access can never be saved.
@@ -211,15 +260,27 @@ export class CollabProvider {
           this.pending.clear();
           this.patch({ pending: 0, editsRejected: true });
         }
-        // Anything still unacknowledged is replayed. The server de-duplicates by update id.
-        for (const entry of this.pending.values()) this.transmit(entry);
+        // A later snapshot on the same socket is a resync, so only the first one replays the backlog.
+        if (!wasSynced) this.replayPending();
         this.sendPresence();
         break;
       }
       case "document.update":
         Y.applyUpdate(this.options.doc, fromBase64(String(payload.payload)), this);
+        this.noteVersion(Number(payload.version));
         break;
+      case "sync.check": {
+        // The server broadcasts the latest persisted version. Being behind on two checks in a row (so in-flight events
+        // aren't mistaken for loss) means events were dropped somewhere, for example a Redis restart. Ask for the state.
+        this.behindChecks = Number(payload.version) > this.contiguous ? this.behindChecks + 1 : 0;
+        if (this.behindChecks >= 2) {
+          this.behindChecks = 0;
+          this.socket?.send(JSON.stringify({ type: "sync.request", payload: {} }));
+        }
+        break;
+      }
       case "document.ack": {
+        this.noteVersion(Number(payload.version));
         const id = String(payload.updateId);
         if (this.pending.delete(id)) void this.store.remove(id);
         this.patch({ pending: this.pending.size, lastSavedAt: Date.now() });

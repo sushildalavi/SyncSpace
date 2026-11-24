@@ -221,3 +221,54 @@ test.describe("permissions on a live document", () => {
     expect(stale.status()).toBe(401);
   });
 });
+
+test.describe("version history", () => {
+  test("restoring an earlier version rewinds the document for everyone and can itself be undone", async ({ page, browser }) => {
+    const { guest, documentId } = await setupPair(browser, page);
+    await body(page).click();
+    await page.keyboard.type("First draft. ");
+    await expect(status(page)).toHaveAttribute("data-state", "Saved");
+    await page.waitForTimeout(150);
+    await page.keyboard.type("Second thought.");
+    await expect(status(page)).toHaveAttribute("data-state", "Saved");
+    await expect(body(guest.page)).toContainText("Second thought.");
+
+    await page.goto(`/d/${documentId}/history`);
+    const versions = page.getByRole("navigation", { name: "Versions" }).getByRole("button");
+    await expect(versions.first()).toBeVisible();
+    const total = await versions.count();
+    // the oldest listed version, i.e. right after the first few keystrokes
+    await versions.nth(total - 1).click();
+    await expect(page.getByText(/Read-only preview of version 1/)).toBeVisible();
+    await page.getByRole("button", { name: "Restore this version" }).click();
+    await page.getByRole("button", { name: "Restore version" }).click();
+    await expect(page.getByText(/Restored version 1 as a new version/)).toBeVisible();
+    await page.waitForURL(new RegExp(`/d/${documentId}$`));
+
+    await expect(body(page)).not.toContainText("Second thought.");
+    // the other person's open editor changed live, with no reload
+    await expect(body(guest.page)).not.toContainText("Second thought.", { timeout: 15_000 });
+
+    // history was not rewritten: the restore is a new, newest entry and the old tip is still there
+    await page.goto(`/d/${documentId}/history`);
+    await expect(versions.first()).toBeVisible();
+    expect(await versions.count()).toBeGreaterThan(total);
+    const newest = await versions.first().textContent();
+    expect(newest).toMatch(/v\d+/);
+    await versions.nth(1).click();
+    await expect(page.getByText(/Read-only preview of version/)).toBeVisible();
+    await expect(page.locator(".ProseMirror")).toContainText("Second thought.");
+  });
+
+  test("viewers can browse history but are not offered a restore", async ({ page, browser }) => {
+    const { guest, documentId } = await setupPair(browser, page, "viewer");
+    await body(page).click();
+    await page.keyboard.type("Some owner text.");
+    await expect(status(page)).toHaveAttribute("data-state", "Saved");
+    await guest.page.goto(`/d/${documentId}/history`);
+    await expect(guest.page.getByRole("navigation", { name: "Versions" }).getByRole("button").first()).toBeVisible();
+    await expect(guest.page.getByRole("button", { name: "Restore this version" })).toHaveCount(0);
+    const response = await guest.page.request.post(`http://localhost:3101/documents/${documentId}/restore`, { headers: { Origin: "http://localhost:3100", "Content-Type": "application/json" }, data: { version: 1 } });
+    expect(response.status()).toBe(403);
+  });
+});

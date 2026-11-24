@@ -17,4 +17,5 @@ Cookie session required unless marked public. State-changing requests must carry
 | `GET/PATCH/DELETE /documents/:id` | member / editor+ / editor+ | |
 | `PUT/DELETE /documents/:id/favorite`, `GET /documents/recent`, `GET /documents/favorites`, `GET /search?q=` | member | |
 | `GET /documents/:id/history`, `GET /documents/:id/history/:version` | member | read-only reconstruction |
+| `POST /documents/:id/restore` `{ version }` | editor+ | rewinds the content as a **new** version (history is never rewritten) and pushes it to open editors live |
 | `GET/PUT/DELETE /workspaces/:id/integrations/:provider`, `POST …/send` | member / owner / editor+ | webhook hosts are allow-listed |

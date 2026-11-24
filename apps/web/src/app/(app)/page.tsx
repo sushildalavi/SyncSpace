@@ -1,11 +1,11 @@
 "use client";
 
 import { useQueryClient } from "@tanstack/react-query";
-import { ArrowRight, Clock, FolderOpen, MailPlus, Star } from "lucide-react";
+import { ArrowRight, Clock, FolderPlus, MailPlus, Star } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { CreateWorkspaceForm } from "@/components/app/create-workspace-dialog";
+import { CreateWorkspaceDialog, CreateWorkspaceForm } from "@/components/app/create-workspace-dialog";
 import { DocumentList, DocumentRow } from "@/components/app/document-row";
 import { QueryError } from "@/components/app/error-state";
 import { Page, PageHeader, RoleBadgeLabel, Section } from "@/components/app/page";
@@ -26,6 +26,7 @@ export default function HomePage() {
   const client = useQueryClient();
   const router = useRouter();
   const [accepting, setAccepting] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
   const firstName = session?.user.name.split(" ")[0];
 
   async function accept(id: string) {
@@ -116,7 +117,14 @@ export default function HomePage() {
         </p>
       )}
 
-      <Section title="Workspaces">
+      <Section
+        title="Workspaces"
+        action={
+          <Button size="sm" onClick={() => setCreating(true)}>
+            <FolderPlus aria-hidden /> New workspace
+          </Button>
+        }
+      >
         {workspaces.isLoading ? (
           <Skeleton className="h-24 w-full" />
         ) : (
@@ -138,10 +146,8 @@ export default function HomePage() {
             ))}
           </ul>
         )}
-        <p className="mt-3 flex items-center gap-2 text-sm text-muted-foreground">
-          <FolderOpen className="size-4" aria-hidden /> Use the switcher in the sidebar to create another workspace.
-        </p>
       </Section>
+      <CreateWorkspaceDialog open={creating} onOpenChange={setCreating} />
     </Page>
   );
 }

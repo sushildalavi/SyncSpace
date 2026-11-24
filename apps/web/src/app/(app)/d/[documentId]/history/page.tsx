@@ -1,20 +1,23 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, History } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowLeft, History, RotateCcw } from "lucide-react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import * as Y from "yjs";
+import { toast } from "sonner";
+import { roleCan } from "@syncspace/contracts";
 import { QueryError } from "@/components/app/error-state";
 import { Page } from "@/components/app/page";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CollabEditor } from "@/components/editor/collab-editor";
 import { api } from "@/lib/api";
-import { useDocument, type HistoryEntry } from "@/lib/queries";
+import { invalidateAccess, useDocument, type HistoryEntry } from "@/lib/queries";
 import { cn, timeAgo } from "@/lib/utils";
 
 type HistoryResponse = { currentVersion: number; updates: HistoryEntry[]; snapshots: Array<{ version: number; byteSize: number }> };
@@ -24,6 +27,10 @@ export default function HistoryPage() {
   const meta = useDocument(documentId);
   const history = useQuery({ queryKey: ["history", documentId], queryFn: () => api<HistoryResponse>(`/documents/${documentId}/history`) });
   const [selected, setSelected] = useState<number | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const [restoring, setRestoring] = useState(false);
+  const router = useRouter();
+  const client = useQueryClient();
   const version = selected ?? history.data?.updates[0]?.version ?? null;
 
   const preview = useQuery({
@@ -37,6 +44,26 @@ export default function HistoryPage() {
     return doc;
   }, [preview.data]);
   useEffect(() => () => previewDoc.destroy(), [previewDoc]);
+
+  const canRestore = roleCan(meta.data?.role, "document.write");
+  const isLatest = version !== null && version === history.data?.currentVersion;
+
+  async function restore() {
+    if (version === null) return;
+    setRestoring(true);
+    try {
+      const result = await api<{ unchanged: boolean; version: number }>(`/documents/${documentId}/restore`, { method: "POST", body: { version } });
+      setConfirming(false);
+      void client.invalidateQueries({ queryKey: ["history", documentId] });
+      invalidateAccess(client, meta.data?.workspaceId);
+      toast.success(result.unchanged ? `The document already matches version ${version}.` : `Restored version ${version} as a new version. You can restore a later one to undo it.`);
+      router.push(`/d/${documentId}`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Couldn't restore that version");
+    } finally {
+      setRestoring(false);
+    }
+  }
 
   if (meta.isError) return <Page><QueryError error={meta.error} what="this document" /></Page>;
 
@@ -77,7 +104,14 @@ export default function HistoryPage() {
             </ul>
           </nav>
           <section aria-label="Version preview" className="min-w-0 rounded-lg border border-border bg-surface p-6 shadow-xs sm:p-8">
-            <p className="mb-4 text-sm text-muted-foreground">Read-only preview of version {version}. It shows the document as it was after that change.</p>
+            <div className="mb-4 flex flex-wrap items-center gap-3">
+              <p className="min-w-0 flex-1 text-sm text-muted-foreground">Read-only preview of version {version}. It shows the document as it was after that change.</p>
+              {canRestore && !isLatest ? (
+                <Button size="sm" onClick={() => setConfirming(true)}>
+                  <RotateCcw aria-hidden /> Restore this version
+                </Button>
+              ) : null}
+            </div>
             {preview.isLoading ? (
               <Skeleton className="h-40 w-full" />
             ) : preview.isError ? (
@@ -88,6 +122,22 @@ export default function HistoryPage() {
           </section>
         </div>
       )}
+      <Dialog open={confirming} onOpenChange={setConfirming}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Restore version {version}?</DialogTitle>
+            <DialogDescription>
+              The document will read as it did after that change. This is saved as a new version, so nothing is lost: restore a later version to undo it. Anyone editing right now sees it live.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button onClick={() => setConfirming(false)}>Cancel</Button>
+            <Button variant="primary" loading={restoring} onClick={() => void restore()}>
+              Restore version
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Page>
   );
 }

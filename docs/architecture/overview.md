@@ -46,6 +46,13 @@ flowchart LR
 6. Every `SNAPSHOT_EVERY` (50) updates, a snapshot is written asynchronously. The trigger compares two integers on the
    document row. It never counts or scans the log, and loading never replays full history.
 
+## Staying in sync when events are lost
+
+The stream is best-effort fan-out, so every 10 seconds each instance tells the clients of every open document the latest persisted
+version (`sync.check`). Versions are gap-free, so a client tracks the highest *contiguous* version it has seen and asks for the state
+(`sync.request`) if it is behind on two consecutive checks. After an outage a client replays its unacknowledged backlog as one merged
+update. See `docs/benchmarks/fault-injection.md`.
+
 ## Live access changes
 
 Membership and session changes publish `access.changed` / `session.revoked` / `document.deleted` on the stream. Instances
