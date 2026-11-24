@@ -1,6 +1,8 @@
 import { Algorithm, hash, verify } from "@node-rs/argon2";
+import bcrypt from "bcryptjs";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { eq } from "drizzle-orm";
 import type { Db } from "../db/database.module.js";
 import * as schema from "../db/schema.js";
 import { actionEmail } from "../mail/templates.js";
@@ -71,7 +73,17 @@ export function createAuth({ db, env, sendMail, onSessionRevoked, audit }: AuthD
       },
       password: {
         hash: (password) => hash(password, ARGON2),
-        verify: ({ hash: stored, password }) => verify(stored, password)
+        verify: async ({ hash: stored, password }) => {
+          if (stored.startsWith("$2")) {
+            // Accounts migrated from the legacy bcrypt system: verify, then upgrade to Argon2id.
+            const ok = await bcrypt.compare(password, stored);
+            if (ok) {
+              await db.update(schema.account).set({ password: await hash(password, ARGON2) }).where(eq(schema.account.password, stored));
+            }
+            return ok;
+          }
+          return verify(stored, password);
+        }
       },
       sendResetPassword: async ({ user, url }) => {
         const body = actionEmail({

@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
-import { and, eq, gt, inArray } from "drizzle-orm";
+import { and, gt, inArray } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 import { WebSocket } from "ws";

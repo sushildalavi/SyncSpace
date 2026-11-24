@@ -24,6 +24,7 @@
     "@syncspace/collaboration": "workspace:*",
     "@syncspace/config": "workspace:*",
     "@syncspace/contracts": "workspace:*",
+    "bcryptjs": "^3.0.3",
     "better-auth": "^1.7.27",
     "cookie-parser": "^1.4.7",
     "drizzle-orm": "^0.45.4",
@@ -48,6 +49,7 @@
     "@types/pg": "^8.23.1",
     "@types/ws": "^8.18.1",
     "drizzle-kit": "^0.31.11",
+    "mongodb": "^7.9.1",
     "tsx": "^4.20.5",
     "typescript": "^5.9.2",
     "vitest": "^3.2.4"
