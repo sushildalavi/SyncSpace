@@ -71,13 +71,13 @@ export function SidebarContent({ onCreateWorkspace }: { onCreateWorkspace: () =>
       <div className="px-2">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button className="flex h-10 w-full items-center gap-2.5 rounded-lg border border-border bg-surface px-2.5 text-left shadow-xs transition-colors hover:bg-muted" aria-label="Switch workspace">
+            <button className="flex h-10 w-full items-center gap-2.5 rounded-lg border border-border bg-surface px-2.5 text-left shadow-xs transition-colors hover:bg-muted">
               {workspaces.isLoading ? (
                 <Skeleton className="h-4 w-28" />
               ) : (
                 <>
                   <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-primary text-xs font-semibold text-primary-foreground">{current?.name[0]?.toUpperCase() ?? "?"}</span>
-                  <span className="flex-1 truncate text-sm font-medium">{current?.name ?? "No workspace"}</span>
+                  <span className="flex-1 truncate text-sm font-medium">{current?.name ?? "No workspace"}<span className="sr-only"> (switch workspace)</span></span>
                 </>
               )}
               <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" aria-hidden />

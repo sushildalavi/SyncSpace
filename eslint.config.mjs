@@ -9,6 +9,10 @@ export default [
   },
   js.configs.recommended,
   {
+    files: ["**/*.mjs"],
+    languageOptions: { globals: { process: "readonly", Buffer: "readonly", URL: "readonly", URLSearchParams: "readonly", console: "readonly", fetch: "readonly", globalThis: "readonly" } }
+  },
+  {
     files: ["**/*.{ts,tsx,mts,cts}"],
     languageOptions: {
       parser: tsParser,

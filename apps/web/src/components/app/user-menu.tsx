@@ -25,11 +25,12 @@ export function UserMenu() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button className="flex h-12 w-full items-center gap-2.5 rounded-lg px-2 text-left transition-colors hover:bg-muted" aria-label="Account menu">
+        <button className="flex h-12 w-full items-center gap-2.5 rounded-lg px-2 text-left transition-colors hover:bg-muted">
           <Avatar name={user.name} src={user.image ?? null} />
           <span className="min-w-0 flex-1">
             <span className="block truncate text-sm font-medium">{user.name}</span>
             <span className="block truncate text-xs text-muted-foreground">{user.email}</span>
+            <span className="sr-only">Account menu</span>
           </span>
         </button>
       </DropdownMenuTrigger>

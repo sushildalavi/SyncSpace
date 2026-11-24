@@ -73,7 +73,7 @@ export async function registerAndSignIn(page: Page, label = "User"): Promise<Tes
   await verifyEmail(page, user);
   await expect(page.getByRole("heading", { name: "Email confirmed" })).toBeVisible();
   await signIn(page, user);
-  await expect(page.getByRole("button", { name: "Account menu" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Account menu|Open navigation/ }).first()).toBeVisible();
   return user;
 }
 

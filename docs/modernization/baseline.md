@@ -59,3 +59,27 @@ Each real issue gets a failing regression test first, then a fix. Planned order:
 4. Cookie sessions with revocation, WebSocket auth by cookie or ticket, and re-checking on membership change.
 5. PostgreSQL schema, migrations and a MongoDB-to-Postgres migrator. MongoDB stays until the migration is verified.
 6. A working load-test harness with latency and convergence metrics, then CI and docs.
+
+## Outcome (after modernization)
+
+| Review item | Status | Where it is covered |
+| --- | --- | --- |
+| 1. Token in localStorage | Fixed. HttpOnly session cookie, nothing readable by JS. | `e2e/auth.spec.ts`, `apps/web/src/lib/auth-client.ts` |
+| 2. JWT in WebSocket URL | Fixed. Cookie + `Origin` check. Credentials in the URL are ignored. | `collaboration.service.spec.ts` ("does not accept credentials from the URL") |
+| 3. Viewers can write | Fixed. Role re-read from the database on **every** write. | `collaboration.service.spec.ts`, `e2e/collaboration.spec.ts` (raw-socket forgery) |
+| 4. Client-chosen versions | Fixed. Version assigned inside the transaction. | `documents.service.spec.ts` |
+| 5. Shared consumer group | Fixed. Every instance `XREAD`s the full stream. | `collaboration.service.spec.ts` (two instances), `docs/benchmarks/collaboration.md` |
+| 6. Snapshot scans/counts | Fixed. Two-integer check, bounded replay from the latest snapshot. | `documents.service.spec.ts` |
+| 7. Non-atomic workspace creation | Fixed (transaction). | `workspaces.service.spec.ts` |
+| 8. No last-owner protection | Fixed (row-locked check, 409). | `workspaces.service.spec.ts`, `e2e/collaboration.spec.ts` |
+| 9. Sockets outlive access | Fixed. Event-driven close plus a 15 s database sweep. | `collaboration.service.spec.ts`, `e2e/collaboration.spec.ts` |
+
+The brief asked for a failing regression test before each fix. That was **not** done in that order. The audit
+was verified by reading the code, and the fixes were written together with the new architecture, so the tests were added alongside
+them rather than demonstrated failing against the old code.
+
+Baseline defects found and resolved: broken lint (now one root `eslint .`), missing decorator metadata under `tsx` (class-validator
+replaced by the shared Zod contracts), and the non-functional load test (replaced, see `docs/benchmarks/collaboration.md`).
+Defects found *during* the work (all fixed and tested): verification emails from an unverified sign-in linked to the API origin
+instead of the app; Better Auth rate-limits only when it sees `X-Forwarded-For`, so the API now derives the client IP itself
+(`TRUST_PROXY`); blank optional env vars from docker compose crashed startup.

@@ -53,12 +53,12 @@ export default function DocumentPage() {
   const role = status.role ?? meta.data?.role ?? null;
   const readOnly = !roleCan(role, "document.write") || Boolean(status.closedReason);
   const canTitle = roleCan(role, "document.write") && !status.closedReason;
-  const stickyTop = "top-12 lg:top-0";
+  const stickyTop = "top-0";
 
   return (
     <div className="flex min-h-full flex-col">
       <header className={cn("sticky z-20 border-b border-border bg-background/90 backdrop-blur", stickyTop)}>
-        <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 sm:px-6">
+        <div className="mx-auto flex w-full max-w-3xl flex-wrap items-center gap-x-3 gap-y-1 px-5 py-2 sm:px-8">
           <div className="min-w-0 flex-1 basis-56">
             {meta.data ? (
               <TitleInput documentId={documentId} workspaceId={meta.data.workspaceId} title={meta.data.title} editable={canTitle} />
@@ -121,7 +121,7 @@ export default function DocumentPage() {
             <Skeleton className="h-5 w-4/5" />
           </div>
         ) : self && provider ? (
-          <CollabEditor doc={doc} provider={provider} user={self} readOnly={readOnly} toolbarClassName={cn("sticky z-10", "top-[3.25rem] sm:top-[3.25rem] lg:top-[3.25rem]")} />
+          <CollabEditor doc={doc} provider={provider} user={self} readOnly={readOnly} toolbarClassName="sm:sticky sm:top-[3.5rem] sm:z-10" />
         ) : null}
       </div>
     </div>
