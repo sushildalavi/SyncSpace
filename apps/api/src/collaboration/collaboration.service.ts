@@ -1,387 +1,440 @@
 import { Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
-import { randomUUID } from "crypto";
-import { IncomingMessage } from "http";
+import { and, eq, gt, inArray } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+import type { IncomingMessage } from "node:http";
 import { WebSocket } from "ws";
-import jwt from "jsonwebtoken";
 import * as Y from "yjs";
-import { CollaborationUpdateSchema, PresenceUpdateSchema } from "@syncspace/contracts";
-import { DatabaseService } from "../database/database.service.js";
+import {
+  CLOSE_CODES,
+  COLLAB_LIMITS,
+  CollaborationUpdateSchema,
+  PresenceUpdateSchema,
+  presenceColorFor,
+  roleCan,
+  type WorkspaceRole
+} from "@syncspace/contracts";
+import { AccessService } from "../access/access.service.js";
+import { AUTH } from "../auth/auth.constants.js";
+import type { Auth } from "../auth/auth.factory.js";
+import { resolveSession } from "../auth/session.guard.js";
+import { DB, type Db } from "../db/database.module.js";
+import { session as sessionTable } from "../db/schema.js";
 import { DocumentsService } from "../documents/documents.service.js";
-import { RedisService } from "../redis/redis.service.js";
-import { APP_ENV } from "../shared/app-env.js";
+import { RealtimeBus, type BusEnvelope } from "../realtime/realtime-bus.service.js";
+import { APP_ENV, type AppEnv } from "../shared/app-env.js";
 
-type SocketContext = {
+type Connection = {
+  id: string;
+  socket: WebSocket;
   userId: string;
   userName: string;
-  documentId: string;
+  sessionId: string;
   workspaceId: string;
+  documentId: string;
   clientId: string;
-};
-
-type UpdateEnvelope = {
-  eventId: string;
-  eventType: "document.update";
-  sourceInstanceId: string;
-  documentId: string;
-  workspaceId: string;
-  actorId: string;
-  clientId: string;
-  updateId: string;
-  version: number;
-  baseVersion: number;
-  payload: string;
-  createdAt: string;
-};
-
-type PresenceEnvelope = {
-  eventId: string;
-  eventType: "presence.update";
-  sourceInstanceId: string;
-  documentId: string;
-  workspaceId: string;
-  userId: string;
-  userName: string;
+  role: WorkspaceRole;
   color: string;
-  cursor?: { anchor: number; head: number };
-  status: "active" | "idle" | "offline";
-  expiresAt: string;
+  windowStart: number;
+  windowCount: number;
 };
+
+const PRESENCE_TTL_MS = 45_000;
+const REVALIDATE_EVERY_MS = 15_000;
 
 @Injectable()
 export class CollaborationService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(CollaborationService.name);
-  private readonly instanceId = randomUUID();
-  private readonly socketsByDocument = new Map<string, Set<WebSocket>>();
-  private readonly contexts = new Map<WebSocket, SocketContext>();
-  private readonly docs = new Map<string, Y.Doc>();
-  private polling = true;
+  private readonly byDocument = new Map<string, Set<Connection>>();
+  private readonly bySocket = new Map<WebSocket, Connection>();
+  private unsubscribe?: () => void;
+  private timer?: NodeJS.Timeout;
 
   constructor(
-    @Inject(DatabaseService) private readonly database: DatabaseService,
-    @Inject(DocumentsService) private readonly documentsService: DocumentsService,
-    @Inject(RedisService) private readonly redis: RedisService,
-    @Inject(APP_ENV) private readonly env: { REDIS_URL: string; JWT_SECRET: string }
+    @Inject(DB) private readonly db: Db,
+    @Inject(AUTH) private readonly auth: Auth,
+    @Inject(AccessService) private readonly access: AccessService,
+    @Inject(DocumentsService) private readonly documents: DocumentsService,
+    @Inject(RealtimeBus) private readonly bus: RealtimeBus,
+    @Inject(APP_ENV) private readonly env: Pick<AppEnv, "WEB_ORIGIN">
   ) {}
 
-  async onModuleInit(): Promise<void> {
-    await this.redis.connect();
-    void this.consumeDocumentUpdates();
+  onModuleInit(): void {
+    this.unsubscribe = this.bus.subscribe((envelope) => this.onBusEvent(envelope));
+    this.timer = setInterval(() => void this.revalidate().catch((error) => this.logger.warn(String(error))), REVALIDATE_EVERY_MS);
+    this.timer.unref();
   }
 
-  async onModuleDestroy(): Promise<void> {
-    this.polling = false;
+  onModuleDestroy(): void {
+    this.unsubscribe?.();
+    clearInterval(this.timer);
+    for (const connection of this.bySocket.values()) {
+      connection.socket.close(1001, "Server shutting down");
+    }
   }
 
-  async handleConnection(client: WebSocket, request: IncomingMessage): Promise<void> {
-    const url = new URL(request.url ?? "/", "http://localhost");
-    const token = url.searchParams.get("token");
-    const documentId = url.searchParams.get("documentId");
-    if (!token || !documentId) {
-      client.close(1008, "Missing collaboration parameters");
-      return;
-    }
+  get connectionCount(): number {
+    return this.bySocket.size;
+  }
 
-    let claims: { id: string; email: string; displayName: string };
-    try {
-      claims = jwt.verify(token, this.env.JWT_SECRET) as { id: string; email: string; displayName: string };
-    } catch {
-      client.close(1008, "Invalid collaboration token");
-      return;
-    }
+  /* ---------------- connection lifecycle ---------------- */
 
-    const userId = claims.id;
-    const document = await this.documentsService.getDocument(documentId, userId);
-    const workspaceId = document.workspaceId;
-    const membership = await this.database.models.memberships.findOne({ workspaceId, userId }).lean();
-    if (!membership) {
-      client.close(1008, "Workspace access denied");
-      return;
-    }
-
-    const context: SocketContext = {
-      userId,
-      userName: claims.displayName,
-      documentId,
-      workspaceId,
-      clientId: url.searchParams.get("clientId") ?? randomUUID()
-    };
-    this.contexts.set(client, context);
-    this.addSocket(documentId, client);
-
-    client.on("message", (data) => void this.handleClientMessage(client, data.toString()));
-    client.on("close", () => this.handleDisconnect(client));
-
-    await this.ensureDocumentState(documentId);
-    await this.sendSnapshot(client, documentId);
-    await this.broadcastPresence(documentId, {
-      eventId: randomUUID(),
-      eventType: "presence.update",
-      sourceInstanceId: this.instanceId,
-      documentId,
-      workspaceId,
-      userId,
-      userName: claims.displayName,
-      color: "#4f46e5",
-      status: "active",
-      expiresAt: new Date(Date.now() + 30_000).toISOString()
+  async handleConnection(socket: WebSocket, request: IncomingMessage): Promise<void> {
+    // Register listeners immediately so nothing sent during async auth is lost.
+    const queued: string[] = [];
+    let ready: Connection | null = null;
+    socket.on("message", (data) => {
+      const text = data.toString();
+      if (ready) {
+        void this.onMessage(ready, text);
+      } else {
+        queued.push(text);
+      }
     });
-  }
+    socket.on("close", () => this.drop(socket));
+    socket.on("error", () => this.drop(socket));
 
-  handleDisconnect(client: WebSocket): void {
-    const context = this.contexts.get(client);
-    if (!context) {
+    const connection = await this.authenticate(socket, request);
+    if (!connection || socket.readyState !== WebSocket.OPEN) {
       return;
     }
-    this.removeSocket(context.documentId, client);
-    void this.redis.removePresence(this.presenceKey(context.documentId, context.userId));
-    this.contexts.delete(client);
+    ready = connection;
+    this.bySocket.set(socket, connection);
+    const set = this.byDocument.get(connection.documentId) ?? new Set<Connection>();
+    set.add(connection);
+    this.byDocument.set(connection.documentId, set);
+
+    // Subscribed first, then state is loaded, so no update can fall into the gap. Yjs merges duplicates.
+    const state = await this.documents.loadState(connection.documentId);
+    this.send(connection, {
+      type: "document.snapshot",
+      payload: {
+        documentId: connection.documentId,
+        version: state.version,
+        snapshot: Buffer.from(state.update).toString("base64"),
+        role: connection.role,
+        connectionId: connection.id
+      }
+    });
+    this.send(connection, { type: "presence.sync", payload: { states: await this.readPresence(connection.documentId, connection.id) } });
+    for (const text of queued.splice(0)) {
+      void this.onMessage(connection, text);
+    }
   }
 
-  async handleClientMessage(client: WebSocket, message: string): Promise<void> {
-    const context = this.contexts.get(client);
-    if (!context) {
+  private async authenticate(socket: WebSocket, request: IncomingMessage): Promise<Connection | null> {
+    // Cookie auth means browsers attach credentials to any origin's socket. Check the Origin ourselves.
+    const origin = request.headers.origin;
+    if (!origin || new URL(this.env.WEB_ORIGIN).origin !== origin) {
+      socket.close(CLOSE_CODES.forbidden, "Origin not allowed");
+      return null;
+    }
+    const url = new URL(request.url ?? "/", "http://localhost");
+    const documentId = url.searchParams.get("documentId") ?? "";
+    const clientId = (url.searchParams.get("clientId") ?? randomUUID()).slice(0, 64);
+
+    const session = await resolveSession(this.auth, request.headers).catch(() => null);
+    if (!session) {
+      socket.close(CLOSE_CODES.unauthenticated, "Sign in to collaborate");
+      return null;
+    }
+    try {
+      const { document, role } = await this.access.requireDocument(documentId, session.user.id, "document.read");
+      return {
+        id: randomUUID(),
+        socket,
+        userId: session.user.id,
+        userName: session.user.name,
+        sessionId: session.sessionId,
+        workspaceId: document.workspaceId,
+        documentId,
+        clientId,
+        role,
+        color: presenceColorFor(session.user.id),
+        windowStart: Date.now(),
+        windowCount: 0
+      };
+    } catch {
+      socket.close(CLOSE_CODES.notFound, "Document not found or access denied");
+      return null;
+    }
+  }
+
+  private drop(socket: WebSocket): void {
+    const connection = this.bySocket.get(socket);
+    if (!connection) {
       return;
     }
+    this.bySocket.delete(socket);
+    const set = this.byDocument.get(connection.documentId);
+    set?.delete(connection);
+    if (set?.size === 0) {
+      this.byDocument.delete(connection.documentId);
+    }
+    void this.bus.redis.hdel(this.presenceKey(connection.documentId), connection.id).catch(() => undefined);
+    this.broadcastLocal(connection.documentId, { type: "presence.leave", payload: { connectionId: connection.id } });
+    void this.bus
+      .publish({ type: "presence.leave", documentId: connection.documentId, connectionId: connection.id })
+      .catch(() => undefined);
+  }
 
+  /* ---------------- inbound messages ---------------- */
+
+  async onMessage(connection: Connection, raw: string): Promise<void> {
+    if (!this.withinRateLimit(connection)) {
+      connection.socket.close(CLOSE_CODES.rateLimited, "Too many messages");
+      return;
+    }
     let parsed: unknown;
     try {
-      parsed = JSON.parse(message);
+      parsed = JSON.parse(raw);
     } catch {
-      client.send(JSON.stringify({ type: "error", message: "Invalid JSON payload" }));
+      this.send(connection, { type: "error", message: "Invalid JSON payload" });
       return;
     }
-
-    if (typeof parsed !== "object" || parsed === null || !("type" in parsed)) {
-      client.send(JSON.stringify({ type: "error", message: "Invalid message envelope" }));
+    if (typeof parsed !== "object" || parsed === null || typeof (parsed as { type?: unknown }).type !== "string") {
+      this.send(connection, { type: "error", message: "Invalid message envelope" });
       return;
     }
-
-    const envelope = parsed as { type: string; payload?: unknown };
-    if (envelope.type === "document.update") {
-      await this.processDocumentUpdate(client, context, envelope.payload);
-      return;
-    }
-
-    if (envelope.type === "presence.update") {
-      await this.processPresenceUpdate(context, envelope.payload);
+    const { type, payload } = parsed as { type: string; payload?: unknown };
+    try {
+      if (type === "document.update") {
+        await this.onDocumentUpdate(connection, payload);
+      } else if (type === "presence.update") {
+        await this.onPresenceUpdate(connection, payload);
+      }
+    } catch (error) {
+      this.logger.error(`message handling failed: ${String(error)}`);
+      this.send(connection, { type: "error", message: "Something went wrong handling that message" });
     }
   }
 
-  private async processDocumentUpdate(client: WebSocket, context: SocketContext, payload: unknown): Promise<void> {
+  private withinRateLimit(connection: Connection): boolean {
+    const now = Date.now();
+    if (now - connection.windowStart >= 1000) {
+      connection.windowStart = now;
+      connection.windowCount = 0;
+    }
+    connection.windowCount += 1;
+    return connection.windowCount <= COLLAB_LIMITS.maxMessagesPerSecond;
+  }
+
+  private async onDocumentUpdate(connection: Connection, payload: unknown): Promise<void> {
     const parsed = CollaborationUpdateSchema.safeParse(payload);
     if (!parsed.success) {
-      client.send(JSON.stringify({ type: "error", message: "Invalid collaboration update" }));
+      this.send(connection, { type: "error", message: "Invalid collaboration update" });
       return;
     }
-
     const update = parsed.data;
-    if (update.documentId !== context.documentId) {
-      client.send(JSON.stringify({ type: "error", message: "Document mismatch" }));
-      return;
-    }
-    const buffer = Buffer.from(update.payload, "base64");
-    const persistResult = await this.documentsService.persistUpdate({
-      documentId: update.documentId,
-      workspaceId: context.workspaceId,
-      actorId: context.userId,
-      clientId: update.clientId,
-      updateId: update.updateId,
-      baseVersion: update.baseVersion,
-      version: update.version,
-      payload: buffer,
-      sourceInstanceId: this.instanceId
-    });
-
-    if (persistResult.duplicate) {
-      client.send(JSON.stringify({ type: "document.duplicate", updateId: update.updateId }));
+    if (update.documentId !== connection.documentId) {
+      this.send(connection, { type: "document.rejected", payload: { updateId: update.updateId, reason: "wrong_document" } });
       return;
     }
 
-    const doc = await this.ensureDocumentState(update.documentId);
-    Y.applyUpdate(doc, buffer);
-    await this.redis.xadd(
-      "syncspace:stream:document-updates",
-      "MAXLEN",
-      "~",
-      "20000",
-      "*",
-      "event",
-      JSON.stringify({
-        eventId: randomUUID(),
-        eventType: "document.update",
-        sourceInstanceId: this.instanceId,
-        documentId: context.documentId,
-        workspaceId: context.workspaceId,
-        actorId: context.userId,
-        clientId: update.clientId,
-        updateId: update.updateId,
-        version: update.version,
-        baseVersion: update.baseVersion,
-        payload: update.payload,
-        createdAt: new Date().toISOString()
-      } satisfies UpdateEnvelope)
-    );
-
-    this.broadcastToDocument(context.documentId, {
-      type: "document.update",
-      payload: update
-    }, client);
-
-    await this.documentsService.snapshotIfNeeded(context.documentId);
-  }
-
-  private async processPresenceUpdate(context: SocketContext, payload: unknown): Promise<void> {
-    const parsed = PresenceUpdateSchema.safeParse(payload);
-    if (!parsed.success) {
+    // Authorization is re-read from the database for every write, so a viewer, or a member
+    // who was just removed, can never persist an update through an already-open socket.
+    const role = await this.access.getRole(connection.workspaceId, connection.userId);
+    if (!role) {
+      this.revoke(connection, CLOSE_CODES.accessRevoked, "Access to this workspace was removed");
+      return;
+    }
+    connection.role = role;
+    if (!roleCan(role, "document.write")) {
+      this.send(connection, { type: "document.rejected", payload: { updateId: update.updateId, reason: "read_only" } });
       return;
     }
 
-    const presence = parsed.data;
-    const key = this.presenceKey(context.documentId, context.userId);
-    const normalizedPresence = {
-      ...presence,
-      documentId: context.documentId,
-      workspaceId: context.workspaceId,
-      userId: context.userId,
-      userName: context.userName
-    };
-    await this.redis.publishPresence(key, JSON.stringify(normalizedPresence), 30);
-    await this.redis.xadd(
-      "syncspace:stream:presence",
-      "MAXLEN",
-      "~",
-      "5000",
-      "*",
-      "event",
-      JSON.stringify({
-        eventType: "presence.update",
-        sourceInstanceId: this.instanceId,
-        ...normalizedPresence,
-        eventId: normalizedPresence.eventId
-      } satisfies PresenceEnvelope)
-    );
-    this.broadcastToDocument(context.documentId, { type: "presence.update", payload: normalizedPresence });
-  }
-
-  private async consumeDocumentUpdates(): Promise<void> {
-    const stream = "syncspace:stream:document-updates";
-    const group = "syncspace-api";
-    const consumer = this.instanceId;
-
+    const bytes = Buffer.from(update.payload, "base64");
     try {
-      await this.redis.commands.xgroup("CREATE", stream, group, "$", "MKSTREAM");
+      Y.applyUpdate(new Y.Doc(), bytes);
     } catch {
-      // group already exists
+      this.send(connection, { type: "document.rejected", payload: { updateId: update.updateId, reason: "malformed" } });
+      return;
     }
 
-    while (this.polling) {
-      const response = (await this.redis.commands.xreadgroup(
-        "GROUP",
-        group,
-        consumer,
-        "COUNT",
-        10,
-        "BLOCK",
-        2000,
-        "STREAMS",
-        stream,
-        ">"
-      )) as Array<[string, Array<[string, string[]]>]> | null;
+    const result = await this.documents.persistUpdate({
+      documentId: connection.documentId,
+      actorId: connection.userId,
+      clientId: connection.clientId,
+      updateId: update.updateId,
+      payload: bytes,
+      sourceInstanceId: this.bus.instanceId
+    });
+    this.send(connection, { type: "document.ack", payload: { updateId: update.updateId, version: result.version, duplicate: result.duplicate } });
+    if (result.duplicate) {
+      return;
+    }
 
-      if (!response) {
-        continue;
+    const outbound = {
+      documentId: connection.documentId,
+      updateId: update.updateId,
+      version: result.version,
+      payload: update.payload,
+      actorId: connection.userId
+    };
+    this.broadcastLocal(connection.documentId, { type: "document.update", payload: outbound }, connection);
+    await this.bus.publish({ type: "document.update", connectionId: connection.id, ...outbound });
+    void this.documents.snapshotIfNeeded(connection.documentId).catch((error) => this.logger.warn(`snapshot failed: ${String(error)}`));
+  }
+
+  private async onPresenceUpdate(connection: Connection, payload: unknown): Promise<void> {
+    const parsed = PresenceUpdateSchema.safeParse(payload);
+    if (!parsed.success || JSON.stringify(parsed.data.cursor ?? {}).length > 2000) {
+      return;
+    }
+    // Identity always comes from the authenticated session, never from the client.
+    const state = {
+      connectionId: connection.id,
+      userId: connection.userId,
+      userName: connection.userName,
+      color: connection.color,
+      status: parsed.data.status,
+      cursor: parsed.data.cursor,
+      expiresAt: Date.now() + PRESENCE_TTL_MS
+    };
+    const key = this.presenceKey(connection.documentId);
+    await this.bus.redis.hset(key, connection.id, JSON.stringify(state));
+    await this.bus.redis.pexpire(key, PRESENCE_TTL_MS * 3);
+    this.broadcastLocal(connection.documentId, { type: "presence.state", payload: state }, connection);
+    await this.bus.publish({ type: "presence.state", documentId: connection.documentId, connectionId: connection.id, state });
+  }
+
+  private presenceKey(documentId: string): string {
+    return `syncspace:presence:${documentId}`;
+  }
+
+  private async readPresence(documentId: string, excludeConnectionId: string): Promise<unknown[]> {
+    const all = await this.bus.redis.hgetall(this.presenceKey(documentId));
+    const now = Date.now();
+    const live: unknown[] = [];
+    const expired: string[] = [];
+    for (const [connectionId, value] of Object.entries(all)) {
+      try {
+        const state = JSON.parse(value) as { expiresAt: number };
+        if (state.expiresAt < now) {
+          expired.push(connectionId);
+        } else if (connectionId !== excludeConnectionId) {
+          live.push(state);
+        }
+      } catch {
+        expired.push(connectionId);
       }
+    }
+    if (expired.length > 0) {
+      await this.bus.redis.hdel(this.presenceKey(documentId), ...expired);
+    }
+    return live;
+  }
 
-      for (const [, entries] of response) {
-        for (const [id, kv] of entries) {
-          const record = this.parseKvPayload(kv);
-          if (record.eventType !== "document.update" || record.sourceInstanceId === this.instanceId) {
-            await this.redis.commands.xack(stream, group, id);
+  /* ---------------- fan-out from other instances ---------------- */
+
+  private onBusEvent({ instanceId, event }: BusEnvelope): void {
+    const remote = instanceId !== this.bus.instanceId;
+    switch (event.type) {
+      case "document.update":
+        if (remote) {
+          this.broadcastLocal(event.documentId, {
+            type: "document.update",
+            payload: { documentId: event.documentId, updateId: event.updateId, version: event.version, payload: event.payload, actorId: event.actorId }
+          });
+        }
+        return;
+      case "presence.state":
+        if (remote) {
+          this.broadcastLocal(event.documentId, { type: "presence.state", payload: event.state });
+        }
+        return;
+      case "presence.leave":
+        if (remote) {
+          this.broadcastLocal(event.documentId, { type: "presence.leave", payload: { connectionId: event.connectionId } });
+        }
+        return;
+      case "access.changed":
+        for (const connection of [...this.bySocket.values()]) {
+          if (connection.workspaceId !== event.workspaceId || connection.userId !== event.userId) {
             continue;
           }
-
-          const doc = this.docs.get(record.documentId);
-          if (doc) {
-            Y.applyUpdate(doc, Buffer.from(record.payload, "base64"));
+          if (event.role === null) {
+            this.revoke(connection, CLOSE_CODES.accessRevoked, "Access to this workspace was removed");
+          } else if (event.role !== connection.role) {
+            connection.role = event.role;
+            this.send(connection, { type: "access.updated", payload: { role: event.role } });
           }
-          this.broadcastToDocument(record.documentId, {
-            type: "document.update",
-            payload: record
-          });
-          await this.redis.commands.xack(stream, group, id);
         }
+        return;
+      case "session.revoked":
+        for (const connection of [...this.bySocket.values()]) {
+          if (connection.sessionId === event.sessionId) {
+            this.revoke(connection, CLOSE_CODES.sessionRevoked, "Your session was signed out");
+          }
+        }
+        return;
+      case "document.deleted":
+        for (const connection of [...(this.byDocument.get(event.documentId) ?? [])]) {
+          this.revoke(connection, CLOSE_CODES.notFound, "This document was deleted");
+        }
+        return;
+    }
+  }
+
+  /**
+   * Safety net for events that never reach the bus (an instance restart, a bulk session delete):
+   * every open socket is periodically checked against the database.
+   */
+  async revalidate(): Promise<void> {
+    const connections = [...this.bySocket.values()];
+    if (connections.length === 0) {
+      return;
+    }
+    const sessionIds = [...new Set(connections.map((connection) => connection.sessionId))];
+    const live = await this.db
+      .select({ id: sessionTable.id })
+      .from(sessionTable)
+      .where(and(inArray(sessionTable.id, sessionIds), gt(sessionTable.expiresAt, new Date())));
+    const liveIds = new Set(live.map((row) => row.id));
+    const roleCache = new Map<string, WorkspaceRole | null>();
+    for (const connection of connections) {
+      if (!liveIds.has(connection.sessionId)) {
+        this.revoke(connection, CLOSE_CODES.sessionRevoked, "Your session has ended");
+        continue;
+      }
+      const cacheKey = `${connection.workspaceId}:${connection.userId}`;
+      if (!roleCache.has(cacheKey)) {
+        roleCache.set(cacheKey, await this.access.getRole(connection.workspaceId, connection.userId));
+      }
+      const role = roleCache.get(cacheKey) ?? null;
+      if (!role) {
+        this.revoke(connection, CLOSE_CODES.accessRevoked, "Access to this workspace was removed");
+      } else if (role !== connection.role) {
+        connection.role = role;
+        this.send(connection, { type: "access.updated", payload: { role } });
       }
     }
   }
 
-  private parseKvPayload(kv: string[]): UpdateEnvelope {
-    const eventIndex = kv.findIndex((value) => value === "event");
-    const eventPayload = eventIndex >= 0 ? kv[eventIndex + 1] : "{}";
-    return JSON.parse(eventPayload) as UpdateEnvelope;
+  /* ---------------- helpers ---------------- */
+
+  private revoke(connection: Connection, code: number, reason: string): void {
+    this.send(connection, { type: "access.revoked", payload: { code, reason } });
+    connection.socket.close(code, reason);
+    this.drop(connection.socket);
   }
 
-  private async ensureDocumentState(documentId: string): Promise<Y.Doc> {
-    let doc = this.docs.get(documentId);
-    if (doc) {
-      return doc;
-    }
-
-    const loaded = await this.documentsService.loadDocumentStateWithoutAuth(documentId);
-    doc = loaded.doc;
-    this.docs.set(documentId, doc);
-    return doc;
-  }
-
-  private addSocket(documentId: string, client: WebSocket): void {
-    const sockets = this.socketsByDocument.get(documentId) ?? new Set<WebSocket>();
-    sockets.add(client);
-    this.socketsByDocument.set(documentId, sockets);
-  }
-
-  private removeSocket(documentId: string, client: WebSocket): void {
-    const sockets = this.socketsByDocument.get(documentId);
-    sockets?.delete(client);
-    if (sockets && sockets.size === 0) {
-      this.socketsByDocument.delete(documentId);
-      this.docs.delete(documentId);
+  private send(connection: Connection, message: unknown): void {
+    if (connection.socket.readyState === WebSocket.OPEN) {
+      connection.socket.send(JSON.stringify(message));
     }
   }
 
-  private broadcastToDocument(documentId: string, message: unknown, exclude?: WebSocket): void {
-    const sockets = this.socketsByDocument.get(documentId);
-    if (!sockets) {
+  private broadcastLocal(documentId: string, message: unknown, exclude?: Connection): void {
+    const set = this.byDocument.get(documentId);
+    if (!set) {
       return;
     }
     const serialized = JSON.stringify(message);
-    for (const socket of sockets) {
-      if (socket === exclude || socket.readyState !== WebSocket.OPEN) {
-        continue;
+    for (const connection of set) {
+      if (connection !== exclude && connection.socket.readyState === WebSocket.OPEN) {
+        connection.socket.send(serialized);
       }
-      socket.send(serialized);
     }
-  }
-
-  private async sendSnapshot(client: WebSocket, documentId: string): Promise<void> {
-    const loaded = await this.documentsService.loadDocumentStateWithoutAuth(documentId);
-    const snapshot = Y.encodeStateAsUpdate(loaded.doc);
-    client.send(
-      JSON.stringify({
-        type: "document.snapshot",
-        payload: {
-          documentId,
-          version: loaded.document.currentVersion,
-          snapshot: Buffer.from(snapshot).toString("base64")
-        }
-      })
-    );
-  }
-
-  private presenceKey(documentId: string, userId: string): string {
-    return `syncspace:presence:${documentId}:${userId}`;
-  }
-
-  private async broadcastPresence(documentId: string, presence: PresenceEnvelope): Promise<void> {
-    await this.redis.publishPresence(this.presenceKey(documentId, presence.userId), JSON.stringify(presence), 30);
-    this.broadcastToDocument(documentId, { type: "presence.update", payload: presence });
   }
 }

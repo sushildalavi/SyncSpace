@@ -1,149 +1,342 @@
-import { ForbiddenException, Injectable, NotFoundException, Inject } from "@nestjs/common";
-import { createHash } from "crypto";
-import { DatabaseService } from "../database/database.service.js";
-import { WorkspacesService } from "../workspaces/workspaces.service.js";
-import { createYDoc, applyDocumentUpdate, encodeDocumentState } from "@syncspace/collaboration";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { and, asc, desc, eq, gt, ilike, isNull, lte, sql } from "drizzle-orm";
+import { createHash } from "node:crypto";
 import * as Y from "yjs";
+import { ROLE_PERMISSIONS } from "@syncspace/contracts";
+import { AccessService } from "../access/access.service.js";
+import { AuditService } from "../audit/audit.service.js";
+import { DB, type Db } from "../db/database.module.js";
+import { document, documentFavorite, documentSnapshot, documentUpdate, documentView, user, workspace, workspaceMember } from "../db/schema.js";
+import { RealtimeBus } from "../realtime/realtime-bus.service.js";
+
+/** Snapshot once this many updates have accumulated since the previous one. */
+export const SNAPSHOT_EVERY = 50;
+
+function escapeLike(value: string): string {
+  return value.replace(/[\\%_]/g, (char) => `\\${char}`);
+}
+
+export type PersistResult = { duplicate: boolean; version: number };
 
 @Injectable()
 export class DocumentsService {
-  private readonly snapshotThreshold = 25;
+  private readonly snapshotting = new Set<string>();
 
   constructor(
-    @Inject(DatabaseService) private readonly database: DatabaseService,
-    @Inject(WorkspacesService) private readonly workspacesService: WorkspacesService
+    @Inject(DB) private readonly db: Db,
+    @Inject(AccessService) private readonly access: AccessService,
+    @Inject(AuditService) private readonly audit: AuditService,
+    @Inject(RealtimeBus) private readonly bus: Pick<RealtimeBus, "publish">
   ) {}
 
-  async list(workspaceId: string, userId: string) {
-    await this.workspacesService.requireMembership(workspaceId, userId);
-    return this.database.models.documents.find({ workspaceId, deletedAt: null }).sort({ updatedAt: -1 }).lean();
+  async list(workspaceId: string, userId: string, query?: string) {
+    await this.access.requireWorkspace(workspaceId, userId, "document.read");
+    return this.db
+      .select({
+        id: document.id,
+        workspaceId: document.workspaceId,
+        title: document.title,
+        updatedAt: document.updatedAt,
+        createdAt: document.createdAt,
+        isFavorite: sql<boolean>`${documentFavorite.userId} is not null`
+      })
+      .from(document)
+      .leftJoin(documentFavorite, and(eq(documentFavorite.documentId, document.id), eq(documentFavorite.userId, userId)))
+      .where(
+        and(
+          eq(document.workspaceId, workspaceId),
+          isNull(document.deletedAt),
+          query ? ilike(document.title, `%${escapeLike(query)}%`) : undefined
+        )
+      )
+      .orderBy(desc(document.updatedAt));
   }
 
   async create(workspaceId: string, title: string, userId: string) {
-    await this.workspacesService.requireMembership(workspaceId, userId, ["owner", "editor"]);
-    return this.database.models.documents.create({
-      workspaceId,
-      title,
-      createdBy: userId,
-      updatedBy: userId
-    });
+    await this.access.requireWorkspace(workspaceId, userId, "document.create");
+    const [created] = await this.db.insert(document).values({ workspaceId, title, createdBy: userId, updatedBy: userId }).returning();
+    return created!;
   }
 
-  async getDocument(documentId: string, userId: string) {
-    const document = await this.database.models.documents.findById(documentId).lean();
-    if (!document || document.deletedAt) {
-      throw new NotFoundException("Document not found");
-    }
-    await this.workspacesService.requireMembership(document.workspaceId, userId);
-    return document;
+  async get(documentId: string, userId: string) {
+    const { document: doc, role } = await this.access.requireDocument(documentId, userId, "document.read");
+    await this.db
+      .insert(documentView)
+      .values({ userId, documentId })
+      .onConflictDoUpdate({ target: [documentView.userId, documentView.documentId], set: { viewedAt: new Date() } });
+    const [favorite] = await this.db
+      .select({ userId: documentFavorite.userId })
+      .from(documentFavorite)
+      .where(and(eq(documentFavorite.documentId, documentId), eq(documentFavorite.userId, userId)))
+      .limit(1);
+    return { ...doc, role, permissions: ROLE_PERMISSIONS[role], isFavorite: Boolean(favorite) };
   }
 
-  async loadDocumentStateWithoutAuth(documentId: string) {
-    const document = await this.database.models.documents.findById(documentId).lean();
-    if (!document || document.deletedAt) {
-      throw new NotFoundException("Document not found");
-    }
+  async rename(documentId: string, title: string, userId: string) {
+    await this.access.requireDocument(documentId, userId, "document.write");
+    const [row] = await this.db.update(document).set({ title, updatedBy: userId }).where(eq(document.id, documentId)).returning();
+    return row!;
+  }
 
-    const doc = createYDoc();
-    const snapshot = await this.database.models.snapshots.findOne({ documentId }).sort({ version: -1 }).lean();
+  async remove(documentId: string, userId: string) {
+    const { document: doc } = await this.access.requireDocument(documentId, userId, "document.delete");
+    await this.db.update(document).set({ deletedAt: new Date() }).where(eq(document.id, documentId));
+    await this.audit.record({ type: "document.deleted", actorId: userId, workspaceId: doc.workspaceId, metadata: { documentId } });
+    await this.bus.publish({ type: "document.deleted", documentId });
+  }
+
+  async setFavorite(documentId: string, userId: string, favorite: boolean) {
+    await this.access.requireDocument(documentId, userId, "document.read");
+    if (favorite) {
+      await this.db.insert(documentFavorite).values({ userId, documentId }).onConflictDoNothing();
+    } else {
+      await this.db.delete(documentFavorite).where(and(eq(documentFavorite.userId, userId), eq(documentFavorite.documentId, documentId)));
+    }
+    return { isFavorite: favorite };
+  }
+
+  /** Documents in workspaces the user still belongs to. */
+  private accessibleDocuments(userId: string) {
+    return this.db
+      .select({
+        id: document.id,
+        workspaceId: document.workspaceId,
+        workspaceName: workspace.name,
+        title: document.title,
+        updatedAt: document.updatedAt
+      })
+      .from(document)
+      .innerJoin(workspace, and(eq(workspace.id, document.workspaceId), isNull(workspace.archivedAt)))
+      .innerJoin(workspaceMember, and(eq(workspaceMember.workspaceId, document.workspaceId), eq(workspaceMember.userId, userId)));
+  }
+
+  async recent(userId: string, limit = 8) {
+    return this.db
+      .select({
+        id: document.id,
+        workspaceId: document.workspaceId,
+        workspaceName: workspace.name,
+        title: document.title,
+        viewedAt: documentView.viewedAt
+      })
+      .from(documentView)
+      .innerJoin(document, and(eq(document.id, documentView.documentId), isNull(document.deletedAt)))
+      .innerJoin(workspace, and(eq(workspace.id, document.workspaceId), isNull(workspace.archivedAt)))
+      .innerJoin(workspaceMember, and(eq(workspaceMember.workspaceId, document.workspaceId), eq(workspaceMember.userId, userId)))
+      .where(eq(documentView.userId, userId))
+      .orderBy(desc(documentView.viewedAt))
+      .limit(limit);
+  }
+
+  async favorites(userId: string) {
+    return this.db
+      .select({
+        id: document.id,
+        workspaceId: document.workspaceId,
+        workspaceName: workspace.name,
+        title: document.title,
+        updatedAt: document.updatedAt
+      })
+      .from(documentFavorite)
+      .innerJoin(document, and(eq(document.id, documentFavorite.documentId), isNull(document.deletedAt)))
+      .innerJoin(workspace, and(eq(workspace.id, document.workspaceId), isNull(workspace.archivedAt)))
+      .innerJoin(workspaceMember, and(eq(workspaceMember.workspaceId, document.workspaceId), eq(workspaceMember.userId, userId)))
+      .where(eq(documentFavorite.userId, userId))
+      .orderBy(desc(documentFavorite.createdAt));
+  }
+
+  async search(userId: string, query: string, limit = 20) {
+    const trimmed = query.trim();
+    if (!trimmed) {
+      return [];
+    }
+    return this.accessibleDocuments(userId)
+      .where(and(isNull(document.deletedAt), ilike(document.title, `%${escapeLike(trimmed)}%`)))
+      .orderBy(desc(document.updatedAt))
+      .limit(limit);
+  }
+
+  /* ---------------- history ---------------- */
+
+  async history(documentId: string, userId: string) {
+    const { document: doc } = await this.access.requireDocument(documentId, userId, "document.read");
+    const updates = await this.db
+      .select({
+        version: documentUpdate.version,
+        actorId: documentUpdate.actorId,
+        actorName: user.name,
+        createdAt: documentUpdate.createdAt
+      })
+      .from(documentUpdate)
+      .innerJoin(user, eq(user.id, documentUpdate.actorId))
+      .where(eq(documentUpdate.documentId, documentId))
+      .orderBy(desc(documentUpdate.version))
+      .limit(200);
+    const snapshots = await this.db
+      .select({
+        version: documentSnapshot.version,
+        byteSize: documentSnapshot.byteSize,
+        updatesSincePrevious: documentSnapshot.updatesSincePrevious,
+        createdAt: documentSnapshot.createdAt
+      })
+      .from(documentSnapshot)
+      .where(eq(documentSnapshot.documentId, documentId))
+      .orderBy(desc(documentSnapshot.version));
+    return { currentVersion: doc.currentVersion, snapshots, updates };
+  }
+
+  async stateAt(documentId: string, userId: string, version: number) {
+    await this.access.requireDocument(documentId, userId, "document.read");
+    const state = await this.loadState(documentId, version);
+    return { version: state.version, state: Buffer.from(state.update).toString("base64") };
+  }
+
+  /* ---------------- collaboration persistence ---------------- */
+
+  /**
+   * Latest snapshot at or below `upTo`, plus only the updates after it. Bounded by SNAPSHOT_EVERY
+   * in normal operation, so loading never replays the full history.
+   */
+  async loadState(documentId: string, upTo?: number): Promise<{ update: Uint8Array; version: number }> {
+    const [snapshot] = await this.db
+      .select({ version: documentSnapshot.version, state: documentSnapshot.state })
+      .from(documentSnapshot)
+      .where(and(eq(documentSnapshot.documentId, documentId), upTo === undefined ? undefined : lte(documentSnapshot.version, upTo)))
+      .orderBy(desc(documentSnapshot.version))
+      .limit(1);
+    const base = snapshot?.version ?? 0;
+    const rows = await this.db
+      .select({ version: documentUpdate.version, payload: documentUpdate.payload })
+      .from(documentUpdate)
+      .where(
+        and(
+          eq(documentUpdate.documentId, documentId),
+          gt(documentUpdate.version, base),
+          upTo === undefined ? undefined : lte(documentUpdate.version, upTo)
+        )
+      )
+      .orderBy(asc(documentUpdate.version));
+    const parts: Uint8Array[] = [];
     if (snapshot) {
-      applyDocumentUpdate(doc, new Uint8Array(snapshot.stateBlob as unknown as Buffer));
+      parts.push(new Uint8Array(snapshot.state));
     }
-    const updates = await this.database.models.updates.find({ documentId }).sort({ receivedAt: 1 }).lean();
-    for (const update of updates) {
-      applyDocumentUpdate(doc, new Uint8Array(update.payload as unknown as Buffer));
+    for (const row of rows) {
+      parts.push(new Uint8Array(row.payload));
     }
-    return { doc, document };
+    const update = parts.length > 0 ? Y.mergeUpdates(parts) : Y.encodeStateAsUpdate(new Y.Doc());
+    return { update, version: rows.at(-1)?.version ?? base };
   }
 
-  async listVersions(documentId: string, userId: string) {
-    const document = await this.getDocument(documentId, userId);
-    const snapshots = await this.database.models.snapshots.find({ documentId }).sort({ version: -1 }).lean();
-    const updates = await this.database.models.updates.find({ documentId }).sort({ receivedAt: -1 }).limit(100).lean();
-    return { document, snapshots, updates };
-  }
-
-  async loadDocumentState(
-    documentId: string,
-    userId: string
-  ): Promise<{ doc: Y.Doc; document: { _id: string; workspaceId: string; currentVersion: number; updatedBy: string } }> {
-    const document = await this.getDocument(documentId, userId);
-    await this.workspacesService.requireMembership(document.workspaceId, userId);
-    return this.loadDocumentStateWithoutAuth(documentId);
-  }
-
+  /**
+   * Appends one incremental update. The version is assigned here, inside the transaction, from
+   * the document row counter, so clients can never choose or skip a version number.
+   */
   async persistUpdate(params: {
     documentId: string;
-    workspaceId: string;
     actorId: string;
     clientId: string;
     updateId: string;
-    baseVersion: number;
-    version: number;
     payload: Uint8Array;
     sourceInstanceId: string;
-  }) {
-    const document = await this.database.models.documents.findById(params.documentId);
-    if (!document) {
-      throw new NotFoundException("Document not found");
+  }): Promise<PersistResult> {
+    const existing = await this.findByUpdateId(params.documentId, params.updateId);
+    if (existing) {
+      return { duplicate: true, version: existing };
     }
-    if (document.workspaceId !== params.workspaceId) {
-      throw new ForbiddenException("Document workspace mismatch");
-    }
-
-    const payloadHash = createHash("sha256").update(params.payload).digest("hex");
     try {
-      const record = await this.database.models.updates.create({
-        documentId: params.documentId,
-        updateId: params.updateId,
-        actorId: params.actorId,
-        clientId: params.clientId,
-        baseVersion: params.baseVersion,
-        version: params.version,
-        payload: Buffer.from(params.payload),
-        payloadHash,
-        sourceInstanceId: params.sourceInstanceId,
-        receivedAt: new Date(),
-        appliedAt: new Date()
+      return await this.db.transaction(async (tx) => {
+        const [bumped] = await tx
+          .update(document)
+          .set({ currentVersion: sql`${document.currentVersion} + 1`, updatedBy: params.actorId, updatedAt: new Date() })
+          .where(and(eq(document.id, params.documentId), isNull(document.deletedAt)))
+          .returning({ version: document.currentVersion });
+        if (!bumped) {
+          throw new NotFoundException("Document not found");
+        }
+        await tx.insert(documentUpdate).values({
+          documentId: params.documentId,
+          version: bumped.version,
+          updateId: params.updateId,
+          actorId: params.actorId,
+          clientId: params.clientId,
+          payload: Buffer.from(params.payload),
+          payloadHash: createHash("sha256").update(params.payload).digest("hex"),
+          sourceInstanceId: params.sourceInstanceId
+        });
+        return { duplicate: false, version: bumped.version };
       });
-      document.currentVersion = Math.max(document.currentVersion, params.version);
-      document.updatedBy = params.actorId;
-      await document.save();
-      return { record, duplicate: false as const };
     } catch (error) {
-      const message = error instanceof Error ? error.message : "";
-      if (message.includes("duplicate key")) {
-        return { record: null, duplicate: true as const };
+      if (isUniqueViolation(error)) {
+        const version = await this.findByUpdateId(params.documentId, params.updateId);
+        if (version) {
+          return { duplicate: true, version };
+        }
       }
       throw error;
     }
   }
 
-  async snapshotIfNeeded(documentId: string): Promise<boolean> {
-    const updatesCount = await this.database.models.updates.countDocuments({ documentId });
-    if (updatesCount < this.snapshotThreshold) {
-      return false;
-    }
-
-    const loaded = await this.loadDocumentStateWithoutAuth(documentId);
-    const serialized = encodeDocumentState(loaded.doc);
-    const latest = await this.database.models.documents.findById(documentId);
-    if (!latest) {
-      return false;
-    }
-
-    const snapshot = await this.database.models.snapshots.create({
-      documentId,
-      version: latest.currentVersion,
-      snapshotType: "yjs",
-      stateBlob: Buffer.from(serialized),
-      byteSize: serialized.byteLength,
-      operationCountSincePrevious: updatesCount
-    });
-
-    latest.snapshotId = snapshot._id;
-    latest.snapshotVersion = latest.currentVersion;
-    await latest.save();
-    return true;
+  private async findByUpdateId(documentId: string, updateId: string): Promise<number | null> {
+    const [row] = await this.db
+      .select({ version: documentUpdate.version })
+      .from(documentUpdate)
+      .where(and(eq(documentUpdate.documentId, documentId), eq(documentUpdate.updateId, updateId)))
+      .limit(1);
+    return row?.version ?? null;
   }
+
+  /**
+   * Writes a snapshot once SNAPSHOT_EVERY updates have accumulated. The check reads two integers
+   * from the document row. It does not count or scan the update log.
+   */
+  async snapshotIfNeeded(documentId: string): Promise<boolean> {
+    if (this.snapshotting.has(documentId)) {
+      return false;
+    }
+    const [doc] = await this.db
+      .select({ currentVersion: document.currentVersion, snapshotVersion: document.snapshotVersion })
+      .from(document)
+      .where(eq(document.id, documentId))
+      .limit(1);
+    if (!doc || doc.currentVersion - doc.snapshotVersion < SNAPSHOT_EVERY) {
+      return false;
+    }
+    this.snapshotting.add(documentId);
+    try {
+      const state = await this.loadState(documentId, doc.currentVersion);
+      const ydoc = new Y.Doc();
+      Y.applyUpdate(ydoc, state.update);
+      const compact = Y.encodeStateAsUpdate(ydoc);
+      await this.db.transaction(async (tx) => {
+        await tx
+          .insert(documentSnapshot)
+          .values({
+            documentId,
+            version: state.version,
+            state: Buffer.from(compact),
+            byteSize: compact.byteLength,
+            updatesSincePrevious: state.version - doc.snapshotVersion
+          })
+          .onConflictDoNothing();
+        await tx
+          .update(document)
+          .set({ snapshotVersion: state.version })
+          .where(and(eq(document.id, documentId), lte(document.snapshotVersion, state.version)));
+      });
+      return true;
+    } finally {
+      this.snapshotting.delete(documentId);
+    }
+  }
+}
+
+export function isUniqueViolation(error: unknown): boolean {
+  let current: unknown = error;
+  for (let depth = 0; current && depth < 4; depth += 1) {
+    if (typeof current === "object" && "code" in current && (current as { code?: string }).code === "23505") {
+      return true;
+    }
+    current = (current as { cause?: unknown }).cause;
+  }
+  return false;
 }

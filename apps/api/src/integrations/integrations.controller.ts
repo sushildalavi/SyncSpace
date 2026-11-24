@@ -1,49 +1,52 @@
-import { Body, Controller, Delete, Get, Inject, Param, Post, Put, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, Inject, Param, ParseEnumPipe, Post, Put } from "@nestjs/common";
+import { IntegrationMessageSchema, IntegrationUpsertSchema } from "@syncspace/contracts";
+import type { AuthenticatedUser } from "../auth/session.guard.js";
 import { CurrentUser } from "../common/current-user.decorator.js";
-import { JwtAuthGuard } from "../common/jwt-auth.guard.js";
-import { WorkspaceRoles } from "../common/roles.decorator.js";
-import { WorkspaceRoleGuard } from "../common/workspace-role.guard.js";
-import { SendIntegrationMessageDto, UpsertIntegrationDto } from "./dto.js";
+import { ZodPipe } from "../common/zod.pipe.js";
 import { IntegrationsService } from "./integrations.service.js";
 
+enum Provider {
+  slack = "slack",
+  teams = "teams"
+}
+
 @Controller("workspaces/:workspaceId/integrations")
-@UseGuards(JwtAuthGuard)
 export class IntegrationsController {
-  constructor(@Inject(IntegrationsService) private readonly integrationsService: IntegrationsService) {}
+  constructor(@Inject(IntegrationsService) private readonly integrations: IntegrationsService) {}
 
   @Get()
-  list(@Param("workspaceId") workspaceId: string, @CurrentUser() user: { id: string }) {
-    return this.integrationsService.listForWorkspace(workspaceId, user.id);
+  list(@Param("workspaceId") workspaceId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.integrations.list(workspaceId, user.id);
   }
 
-  @UseGuards(WorkspaceRoleGuard)
-  @WorkspaceRoles("owner")
   @Put(":provider")
   upsert(
     @Param("workspaceId") workspaceId: string,
-    @Param("provider") provider: "slack" | "teams",
-    @Body() body: Omit<UpsertIntegrationDto, "provider">,
-    @CurrentUser() user: { id: string; email: string; displayName: string }
+    @Param("provider", new ParseEnumPipe(Provider)) provider: Provider,
+    @Body(new ZodPipe(IntegrationUpsertSchema)) body: { name: string; webhookUrl: string; enabled: boolean },
+    @CurrentUser() user: AuthenticatedUser
   ) {
-    return this.integrationsService.upsert(workspaceId, provider, body, user);
+    return this.integrations.upsert(workspaceId, provider, body, user);
   }
 
-  @UseGuards(WorkspaceRoleGuard)
-  @WorkspaceRoles("owner")
   @Delete(":provider")
-  remove(@Param("workspaceId") workspaceId: string, @Param("provider") provider: "slack" | "teams", @CurrentUser() user: { id: string }) {
-    return this.integrationsService.remove(workspaceId, provider, user.id);
+  @HttpCode(204)
+  async remove(
+    @Param("workspaceId") workspaceId: string,
+    @Param("provider", new ParseEnumPipe(Provider)) provider: Provider,
+    @CurrentUser() user: AuthenticatedUser
+  ) {
+    await this.integrations.remove(workspaceId, provider, user.id);
   }
 
-  @UseGuards(WorkspaceRoleGuard)
-  @WorkspaceRoles("owner", "editor")
   @Post(":provider/send")
+  @HttpCode(200)
   send(
     @Param("workspaceId") workspaceId: string,
-    @Param("provider") provider: "slack" | "teams",
-    @Body() body: SendIntegrationMessageDto,
-    @CurrentUser() user: { id: string }
+    @Param("provider", new ParseEnumPipe(Provider)) provider: Provider,
+    @Body(new ZodPipe(IntegrationMessageSchema)) body: { title: string; summary: string; documentUrl: string },
+    @CurrentUser() user: AuthenticatedUser
   ) {
-    return this.integrationsService.sendMessage(workspaceId, provider, body, user.id);
+    return this.integrations.send(workspaceId, provider, body, user.id);
   }
 }
