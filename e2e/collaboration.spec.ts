@@ -194,10 +194,15 @@ test.describe("permissions on a live document", () => {
     const { guest, workspaceId, documentId } = await setupPair(browser, page, "editor");
     await page.goto(`/w/${workspaceId}/members`);
     await page.getByRole("button", { name: `Remove ${guest.user.name}` }).click();
+    // the open page reloads the document once it learns access is gone, and the API answers 404
+    const refetch = guest.page.waitForResponse((reply) => reply.url().endsWith(`/documents/${documentId}`) && reply.status() === 404);
     await page.getByRole("button", { name: "Remove member" }).click();
     await expect(page.getByText(`${guest.user.name} was removed`)).toBeVisible();
 
-    await expect(guest.page.getByRole("alert").filter({ hasText: "Your access to this workspace was removed" })).toBeVisible({ timeout: 15_000 });
+    // the explanation must still be there after that reload, and the document must be gone
+    await refetch;
+    await expect(body(guest.page)).toHaveCount(0);
+    await expect(guest.page.getByRole("alert").filter({ hasText: "Your access to this workspace was removed" })).toBeVisible();
     // the API no longer serves the document to them either
     const response = await guest.page.request.get(`http://localhost:3101/documents/${documentId}`);
     expect(response.status()).toBe(404);

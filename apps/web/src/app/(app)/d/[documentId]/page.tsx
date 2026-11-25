@@ -5,7 +5,7 @@ import { History, LogIn, Star, TriangleAlert } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { presenceColorFor, roleCan } from "@syncspace/contracts";
+import { CLOSE_CODES, presenceColorFor, roleCan } from "@syncspace/contracts";
 import { QueryError } from "@/components/app/error-state";
 import { Page } from "@/components/app/page";
 import { Button } from "@/components/ui/button";
@@ -48,7 +48,21 @@ export default function DocumentPage() {
     if (status.closedReason) invalidateAccess(client, meta.data?.workspaceId);
   }, [status.closedReason, client, meta.data?.workspaceId]);
 
-  if (meta.isError) return <Page narrow><QueryError error={meta.error} what="this document" /></Page>;
+  const mustSignIn = status.closedCode === CLOSE_CODES.unauthenticated || status.closedCode === CLOSE_CODES.sessionRevoked;
+  const closedNotice = status.closedReason ? (
+    <div role="alert" className="mb-6 flex flex-col gap-3 rounded-lg border border-warning/30 bg-warning-soft p-4 text-warning sm:flex-row sm:items-center">
+      <TriangleAlert className="hidden size-5 shrink-0 sm:block" aria-hidden />
+      <p className="flex-1 text-sm font-medium">{status.closedReason}</p>
+      <Button asChild size="sm">
+        <Link href={mustSignIn ? `/sign-in?next=/d/${documentId}` : "/"}>
+          <LogIn aria-hidden /> {mustSignIn ? "Sign in" : "Go home"}
+        </Link>
+      </Button>
+    </div>
+  ) : null;
+
+  // Losing access also makes the document request fail. Keep saying why, instead of a generic "not found".
+  if (meta.isError) return <Page narrow>{closedNotice ?? <QueryError error={meta.error} what="this document" />}</Page>;
 
   const role = status.role ?? meta.data?.role ?? null;
   const readOnly = !roleCan(role, "document.write") || Boolean(status.closedReason);
@@ -89,17 +103,7 @@ export default function DocumentPage() {
       </header>
 
       <div className="mx-auto w-full max-w-3xl flex-1 px-5 pb-24 pt-8 sm:px-8 sm:pt-10">
-        {status.closedReason ? (
-          <div role="alert" className="mb-6 flex flex-col gap-3 rounded-lg border border-warning/30 bg-warning-soft p-4 text-warning sm:flex-row sm:items-center">
-            <TriangleAlert className="hidden size-5 shrink-0 sm:block" aria-hidden />
-            <p className="flex-1 text-sm font-medium">{status.closedReason}</p>
-            <Button asChild size="sm">
-              <Link href={status.closedCode === 4401 || status.closedCode === 4411 ? `/sign-in?next=/d/${documentId}` : "/"}>
-                <LogIn aria-hidden /> {status.closedCode === 4401 || status.closedCode === 4411 ? "Sign in" : "Go home"}
-              </Link>
-            </Button>
-          </div>
-        ) : null}
+        {closedNotice}
 
         {!status.closedReason && !roleCan(role, "document.write") && role ? (
           <p role="note" className="mb-6 rounded-lg border border-border bg-muted/60 px-4 py-2.5 text-sm text-muted-foreground">
