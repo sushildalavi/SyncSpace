@@ -30,7 +30,7 @@ the API (`GET /config`) rather than guessing.
      | Environment | URI |
      | --- | --- |
      | Local development | `http://localhost:3001/api/auth/callback/google` |
-     | Production | `https://api.example.com/api/auth/callback/google` |
+     | Production ([deployment guide](../deployment.md)) | `https://api.example.com/api/auth/callback/google` |
 
    - Save, then copy the **Client ID** and **Client secret**.
 

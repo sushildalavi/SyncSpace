@@ -69,6 +69,8 @@ pnpm --filter @syncspace/api dev       # API on :3001, runs migrations on start
 pnpm --filter @syncspace/web dev       # web on :3000
 ```
 
+To run it on your own server with HTTPS, follow the [deployment guide](docs/deployment.md).
+
 ## Demo walkthrough
 
 1. Open <http://localhost:3000/sign-up> and create **Ada**. Open Mailpit and click the confirmation link, then sign in.
@@ -104,6 +106,7 @@ apps/loadtest    Collaboration load generator
 packages/contracts   Zod schemas + the RBAC permission matrix shared by API and web
 packages/config      Environment validation
 e2e/             Playwright suite (+ a protocol-level Google mock)
+infrastructure/  Dockerfiles and the single-server production stack
 docs/            Architecture, ADRs, runbooks, benchmarks, screenshots
 ```
 
@@ -129,7 +132,7 @@ See [docs/testing.md](docs/testing.md). GitHub Actions runs lint, typecheck, uni
 Stated plainly:
 
 - **Live Google sign-in has not been exercised** because no Google credentials were available to this project. The OAuth handling is tested end to end against a local OIDC stand-in. Use the [live checklist](docs/auth/google-setup.md#live-verification-checklist) with your own client.
-- **No hosted demo.** There is no public deployment, so run it locally (two commands above).
+- **No hosted demo.** There is no public deployment, so run it locally (two commands above). The [single-server setup](docs/deployment.md) has been rehearsed locally but not on a public server.
 - **Fault injection is one scenario on one machine** (Redis pause and flush, a frozen instance, `kill -9`). It found and fixed three real defects, and its limits are listed in [docs/benchmarks/fault-injection.md](docs/benchmarks/fault-injection.md#limits-of-this-test). PostgreSQL failure and long outages are untested.
 - Sharing is per workspace, not per document. There are no public share links.
 - Email change, account deletion and two-factor authentication are not implemented.
