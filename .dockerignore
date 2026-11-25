@@ -6,3 +6,5 @@
 docs
 test-results
 playwright-report
+**/.env
+**/.env.*

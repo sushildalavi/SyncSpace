@@ -1,0 +1,107 @@
+# Single-server production stack: Caddy (automatic HTTPS) in front of the web app and API.
+# Only Caddy publishes ports. See docs/deployment.md.
+name: syncspace-prod
+
+x-defaults: &defaults
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  caddy:
+    <<: *defaults
+    image: caddy:2-alpine
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:?set APP_DOMAIN}
+      API_DOMAIN: ${API_DOMAIN:?set API_DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+      web:
+        condition: service_started
+
+  postgres:
+    <<: *defaults
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: syncspace
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: syncspace
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U syncspace"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    <<: *defaults
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    <<: *defaults
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/api.Dockerfile
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://syncspace:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/syncspace
+      REDIS_URL: redis://redis:6379
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?set BETTER_AUTH_SECRET}
+      API_BASE_URL: https://${API_DOMAIN:?set API_DOMAIN}
+      WEB_ORIGIN: https://${APP_DOMAIN:?set APP_DOMAIN}
+      API_PORT: 3001
+      # Exactly one proxy (Caddy) sits in front of the API.
+      TRUST_PROXY: 1
+      SMTP_URL: ${SMTP_URL:?set SMTP_URL}
+      MAIL_FROM: ${MAIL_FROM:?set MAIL_FROM}
+      REQUIRE_EMAIL_VERIFICATION: "true"
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+    healthcheck:
+      # /health answers 200 even when a dependency is down, so check the body.
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3001/health').then(r=>r.json()).then(b=>process.exit(b.ok?0:1),()=>process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  web:
+    <<: *defaults
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/web.Dockerfile
+      args:
+        # Compiled into the browser bundle: rebuild after changing API_DOMAIN.
+        NEXT_PUBLIC_API_BASE_URL: https://${API_DOMAIN:?set API_DOMAIN}
+
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:

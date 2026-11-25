@@ -16,3 +16,4 @@ test-results/
 playwright-report/
 .next/
 *.tsbuildinfo
+.env.production
