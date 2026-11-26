@@ -16,7 +16,7 @@ a document must hold identical text). The run exits non-zero on any divergence, 
 Environment: Apple M3 laptop, Node 26, PostgreSQL 16 and Redis 7 in Docker, API and load generator on the same machine.
 These are single-machine numbers, so use them for relative comparison and regression detection, not capacity planning.
 
-### Results (2026-11-25, commit `d43d692`)
+### Results (2026-11-25, commit `4d1572e`)
 
 Median of three runs, with the lowest and highest run in brackets. Times are in milliseconds.
 
@@ -29,7 +29,7 @@ Each run sends 2,000 or 4,000 updates. The 280-client run handled about 540 upda
 
 #### Cost of single-document sharing
 
-The same runs on the commit before sharing was added (`597e637`), alternating with the new code on the same machine:
+The same runs on the commit before sharing was added (`d742287`), alternating with the new code on the same machine:
 
 | Clients | Ack p50, before → after | Ack p95, before → after |
 | --- | --- | --- |
