@@ -8,7 +8,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 import { QueryError } from "@/components/layout/errorState";
-import { Page, RoleBadgeLabel } from "@/components/layout/pageLayout";
+import { Page, roleLabel } from "@/components/layout/pageLayout";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
@@ -54,7 +54,7 @@ export function InviteView() {
           <>
             <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-xl bg-primary-soft text-primary"><MailPlus className="size-6" aria-hidden /></div>
             <h1 className="text-xl font-semibold">Join {preview.data.workspaceName}</h1>
-            <p className="mt-2 text-sm text-muted-foreground">You&apos;ve been invited as {preview.data.role === "viewer" ? "a" : "an"} <strong className="font-medium text-foreground">{RoleBadgeLabel(preview.data.role)}</strong>.</p>
+            <p className="mt-2 text-sm text-muted-foreground">You&apos;ve been invited as {preview.data.role === "viewer" ? "a" : "an"} <strong className="font-medium text-foreground">{roleLabel(preview.data.role)}</strong>.</p>
             {preview.data.matchesAccount ? (
               <Button variant="primary" size="lg" className="mt-6 w-full" onClick={accept} loading={pending}>Accept invitation</Button>
             ) : (

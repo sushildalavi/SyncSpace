@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import { CreateWorkspaceDialog, CreateWorkspaceForm } from "@/components/workspace/createWorkspaceDialog";
 import { DocumentList, DocumentRow } from "@/components/document/documentRow";
 import { QueryError } from "@/components/layout/errorState";
-import { Page, PageHeader, RoleBadgeLabel, Section } from "@/components/layout/pageLayout";
+import { Page, PageHeader, roleLabel, Section } from "@/components/layout/pageLayout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -77,7 +77,7 @@ export default function HomePage() {
               <li key={invite.id} className="flex flex-col gap-3 rounded-lg border border-primary/30 bg-primary-soft p-4 sm:flex-row sm:items-center">
                 <MailPlus className="hidden size-5 shrink-0 text-primary sm:block" aria-hidden />
                 <p className="flex-1 text-sm">
-                  <strong className="font-medium">{invite.invitedByName}</strong> invited you to <strong className="font-medium">{invite.workspaceName}</strong> as {RoleBadgeLabel(invite.role).toLowerCase()}.
+                  <strong className="font-medium">{invite.invitedByName}</strong> invited you to <strong className="font-medium">{invite.workspaceName}</strong> as {roleLabel(invite.role).toLowerCase()}.
                 </p>
                 <Button variant="primary" size="sm" loading={accepting === invite.id} onClick={() => accept(invite.id)}>
                   Accept
@@ -150,7 +150,7 @@ export default function HomePage() {
                       {w.documentCount} {w.documentCount === 1 ? "document" : "documents"} · {w.memberCount} {w.memberCount === 1 ? "member" : "members"}
                     </span>
                   </span>
-                  <Badge tone={w.role === "owner" ? "primary" : "neutral"}>{RoleBadgeLabel(w.role)}</Badge>
+                  <Badge tone={w.role === "owner" ? "primary" : "neutral"}>{roleLabel(w.role)}</Badge>
                   <ArrowRight className="size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" aria-hidden />
                 </Link>
               </li>

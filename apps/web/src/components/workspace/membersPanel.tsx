@@ -19,7 +19,7 @@ import { api } from "@/lib/api";
 import { useSession } from "@/lib/authClient";
 import { invalidateAccess, useInvitations, useMembers, useWorkspace, type Member } from "@/lib/queries";
 import { timeAgo } from "@/lib/utils";
-import { RoleBadgeLabel } from "../layout/pageLayout";
+import { roleLabel } from "../layout/pageLayout";
 
 const roleHelp: Record<WorkspaceRole, string> = {
   owner: "Full control, including members and settings",
@@ -102,7 +102,7 @@ export function MembersPanel({ workspaceId }: { workspaceId: string }) {
     <div className="space-y-10">
       {workspace.data ? (
         <p className="rounded-lg border border-border bg-muted/50 px-4 py-3 text-sm">
-          You&apos;re {workspace.data.role === "viewer" ? "a" : "an"} <strong className="font-medium">{RoleBadgeLabel(workspace.data.role)}</strong>. {roleHelp[workspace.data.role]}.
+          You&apos;re {workspace.data.role === "viewer" ? "a" : "an"} <strong className="font-medium">{roleLabel(workspace.data.role)}</strong>. {roleHelp[workspace.data.role]}.
         </p>
       ) : null}
 
@@ -150,7 +150,7 @@ export function MembersPanel({ workspaceId }: { workspaceId: string }) {
                       <option value="viewer">Viewer</option>
                     </Select>
                   ) : (
-                    <Badge tone={member.role === "owner" ? "primary" : "neutral"}>{RoleBadgeLabel(member.role)}</Badge>
+                    <Badge tone={member.role === "owner" ? "primary" : "neutral"}>{roleLabel(member.role)}</Badge>
                   )}
                   {canManage && member.userId !== me ? (
                     <Button variant="ghost" size="icon-sm" aria-label={`Remove ${member.name}`} onClick={() => setRemoving(member)}>
@@ -176,7 +176,7 @@ export function MembersPanel({ workspaceId }: { workspaceId: string }) {
                   <span className="flex size-8 items-center justify-center rounded-full bg-muted text-muted-foreground"><Clock className="size-4" aria-hidden /></span>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium">{invite.email}</p>
-                    <p className="text-sm text-muted-foreground">{RoleBadgeLabel(invite.role)} · sent {timeAgo(invite.createdAt)}</p>
+                    <p className="text-sm text-muted-foreground">{roleLabel(invite.role)} · sent {timeAgo(invite.createdAt)}</p>
                   </div>
                   <Button variant="ghost" size="sm" onClick={() => void revoke(invite.id)}>Revoke</Button>
                 </li>

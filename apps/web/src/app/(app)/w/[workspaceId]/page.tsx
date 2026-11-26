@@ -7,7 +7,7 @@ import { roleCan } from "@syncspace/contracts";
 import { toast } from "sonner";
 import { DocumentList, DocumentRow } from "@/components/document/documentRow";
 import { QueryError } from "@/components/layout/errorState";
-import { Page, PageHeader, RoleBadgeLabel } from "@/components/layout/pageLayout";
+import { Page, PageHeader, roleLabel } from "@/components/layout/pageLayout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/emptyState";
@@ -41,7 +41,7 @@ export default function WorkspacePage() {
     <Page>
       <PageHeader
         title={workspace.data?.name ?? <Skeleton className="inline-block h-7 w-48 align-middle" />}
-        eyebrow={workspace.data ? <Badge tone={workspace.data.role === "owner" ? "primary" : "neutral"}>{RoleBadgeLabel(workspace.data.role)}</Badge> : null}
+        eyebrow={workspace.data ? <Badge tone={workspace.data.role === "owner" ? "primary" : "neutral"}>{roleLabel(workspace.data.role)}</Badge> : null}
         description={workspace.data && !canCreate ? "You have view-only access in this workspace." : undefined}
         actions={
           canCreate && (documents.data?.length ?? 0) > 0 ? (

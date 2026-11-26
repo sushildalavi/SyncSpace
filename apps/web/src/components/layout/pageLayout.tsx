@@ -36,6 +36,6 @@ export function Section({ title, description, children, action }: { title: strin
   );
 }
 
-export function RoleBadgeLabel(role: "owner" | "editor" | "viewer") {
+export function roleLabel(role: "owner" | "editor" | "viewer") {
   return role === "owner" ? "Owner" : role === "editor" ? "Editor" : "Viewer";
 }
