@@ -1,4 +1,4 @@
-import { PASSWORD, contextOptions, expect, formAlert, test, latestEmail, newUser, registerAndSignIn, signIn, signUp, verifyEmail } from "./support/helpers";
+import { PASSWORD, contextOptions, expect, formAlert, test, latestEmail, newUser, openSecuritySettings, registerAndSignIn, signIn, signUp, verifyEmail } from "./support/helpers";
 
 test.describe("email and password", () => {
   test("registers, must verify, then signs in and lands on the dashboard", async ({ page }) => {
@@ -175,7 +175,7 @@ test.describe("sessions", () => {
     await signIn(otherPage, user);
     await expect(otherPage.getByRole("button", { name: "Account menu" })).toBeVisible();
 
-    await page.goto("/settings/security");
+    await openSecuritySettings(page);
     await page.getByRole("button", { name: "Sign out everywhere" }).click();
     await page.waitForURL(/\/sign-in/);
     await otherPage.reload();

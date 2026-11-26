@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { createDocument, createWorkspace, expect, inviteAndAccept, newUserContext, registerAndSignIn, test } from "./support/helpers";
+import { createDocument, createWorkspace, expect, inviteAndAccept, newUserContext, openSecuritySettings, registerAndSignIn, test } from "./support/helpers";
 
 const body = (page: Page) => page.getByRole("textbox", { name: "Document body" });
 const status = (page: Page) => page.getByTestId("sync-status");
@@ -14,6 +14,10 @@ const plainText = (page: Page) =>
       })
       .join("\n")
   );
+
+/** Reads both pages again on every attempt, because either may still be receiving the other's last keystrokes. */
+const expectSameText = (first: Page, second: Page) =>
+  expect(async () => expect(await plainText(first)).toBe(await plainText(second))).toPass({ timeout: 8_000 });
 
 async function setupPair(browser: import("@playwright/test").Browser, page: Page, role: "editor" | "viewer" = "editor") {
   await registerAndSignIn(page, "Writer");
@@ -38,7 +42,7 @@ test.describe("real-time collaboration", () => {
     await guest.page.keyboard.press("End");
     await guest.page.keyboard.type("And a reply from the guest.");
     await expect(body(page)).toContainText("And a reply from the guest.");
-    await expect.poll(() => plainText(page)).toBe(await plainText(guest.page));
+    await expectSameText(page, guest.page);
 
     // presence: each sees the other, and the remote caret label carries the real name
     await expect(page.getByTestId("presence").getByRole("listitem")).toHaveCount(2);
@@ -99,7 +103,7 @@ test.describe("real-time collaboration", () => {
     await expect(status(guest.page)).toHaveAttribute("data-state", "Saved", { timeout: 20_000 });
     await expect(body(page)).toContainText("Typed while offline.");
     await expect(body(guest.page)).toContainText("More from online.");
-    await expect.poll(() => plainText(page)).toBe(await plainText(guest.page));
+    await expectSameText(page, guest.page);
 
     // and it's durable
     await guest.page.goto(`/d/${documentId}`);
@@ -219,7 +223,7 @@ test.describe("permissions on a live document", () => {
 
   test("signing the editor out elsewhere ends their live connection", async ({ page, browser }) => {
     const { guest } = await setupPair(browser, page, "editor");
-    await guest.page.goto("/settings/security");
+    await openSecuritySettings(guest.page);
     await guest.page.getByRole("button", { name: "Sign out everywhere" }).click();
     await guest.page.waitForURL(/\/sign-in/);
     const stale = await guest.page.request.get("http://localhost:3101/me");

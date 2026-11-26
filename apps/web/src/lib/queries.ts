@@ -54,8 +54,9 @@ export const keys = {
 export const useConfig = () => useQuery({ queryKey: keys.config, queryFn: () => api<PublicConfig>("/config"), staleTime: 5 * 60_000 });
 export const useWorkspaces = () => useQuery({ queryKey: keys.workspaces, queryFn: () => api<Workspace[]>("/workspaces") });
 export const useWorkspace = (id: string) => useQuery({ queryKey: keys.workspace(id), queryFn: () => api<WorkspaceDetail>(`/workspaces/${id}`), retry: false });
+/** An empty id means no workspace is selected yet, so there is nothing to request. */
 export const useDocuments = (workspaceId: string) =>
-  useQuery({ queryKey: keys.documents(workspaceId), queryFn: () => api<DocumentSummary[]>(`/workspaces/${workspaceId}/documents`) });
+  useQuery({ queryKey: keys.documents(workspaceId), queryFn: () => api<DocumentSummary[]>(`/workspaces/${workspaceId}/documents`), enabled: workspaceId !== "" });
 export const useDocument = (id: string) => useQuery({ queryKey: keys.document(id), queryFn: () => api<DocumentDetail>(`/documents/${id}`), retry: false });
 export const useMembers = (id: string) => useQuery({ queryKey: keys.members(id), queryFn: () => api<Member[]>(`/workspaces/${id}/members`) });
 export const useInvitations = (id: string, enabled: boolean) =>
