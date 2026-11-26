@@ -1,19 +1,32 @@
-node_modules
-dist
-.next
-.turbo
-coverage
-test-results
-playwright-report
-*.log
-.DS_Store
-.env
-.env.local
-!.env.example
+# Dependencies and build output
+node_modules/
+dist/
+.next/
+.turbo/
 *.tsbuildinfo
 
+# Test and tool output
+coverage/
 test-results/
 playwright-report/
-.next/
-*.tsbuildinfo
-.env.production
+*.log
+
+# OS and editor files
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Environment files, keys and database backups. Only the example files are committed.
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.pem
+*.key
+*.dump
+/backup-*/
+
+# Local instructions for coding agents
+CLAUDE.md
+AGENTS.md
