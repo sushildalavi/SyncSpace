@@ -1,5 +1,26 @@
 {
   "name": "syncspace",
+  "description": "Real-time collaborative document editor with offline editing, role-based sharing and two-factor sign-in.",
+  "keywords": [
+    "collaboration",
+    "real-time",
+    "collaborative-editing",
+    "crdt",
+    "yjs",
+    "offline-first",
+    "nextjs",
+    "nestjs",
+    "postgresql",
+    "redis",
+    "websockets",
+    "typescript"
+  ],
+  "homepage": "https://github.com/sushildalavi/SyncSpace#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sushildalavi/SyncSpace.git"
+  },
+  "author": "Sushil Ravindra Dalavi",
   "private": true,
   "packageManager": "pnpm@10.15.1",
   "scripts": {

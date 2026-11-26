@@ -1,5 +1,7 @@
 # SyncSpace
 
+[![CI](https://github.com/sushildalavi/SyncSpace/actions/workflows/ci.yml/badge.svg)](https://github.com/sushildalavi/SyncSpace/actions/workflows/ci.yml)
+
 **Real-time collaborative documents with offline editing, live cursors, role-based sharing and secure sign-in.**
 Full-stack TypeScript: Next.js · NestJS · PostgreSQL · Yjs · Redis · Better Auth.
 
