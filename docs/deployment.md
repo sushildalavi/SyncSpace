@@ -12,7 +12,7 @@ public IP address. Nothing in this repository creates or pays for infrastructure
 | A domain | Two names under it, for example `app.example.com` and `api.example.com`. |
 | An SMTP account | Required. Sign-up confirmation, password reset and invitations are emails. |
 | Open ports | 80 and 443 (TCP), plus 443 UDP if you want HTTP/3. |
-| Google OAuth client | Optional. See [Google setup](auth/google-setup.md). |
+| Google OAuth client | Optional. See [Google setup](googleSignIn.md). |
 
 **Both names must share one registrable domain.** The session cookie is `SameSite=Lax`, so a web app and API on
 unrelated domains cannot stay signed in. This includes two default subdomains on many hosting platforms.
@@ -42,7 +42,7 @@ unrelated domains cannot stay signed in. This includes two default subdomains on
 5. Check it from your own computer:
 
    ```bash
-   scripts/check-deployment.sh app.example.com api.example.com
+   scripts/checkDeployment.sh app.example.com api.example.com
    ```
 
 6. Create an account, confirm the email, and edit one document from two browsers.
@@ -75,15 +75,15 @@ Rehearsed on one machine with Docker, using `*.localhost` names and Caddy's self
 mail server:
 
 - the stack starts healthy with `NODE_ENV=production`;
-- `scripts/check-deployment.sh` passes (run with `INSECURE=1`);
+- `scripts/checkDeployment.sh` passes (run with `INSECURE=1`);
 - two browser users sign up, confirm by email, sign in, accept an invitation and edit one document over `wss://`;
 - the session cookie is `__Secure-`, `HttpOnly`, `SameSite=Lax`;
 - data survives `down` and `up`, and the backup and restore commands recover a deleted document.
 
 **Not verified:** a real server, public DNS, publicly trusted certificates, a real mail provider, and Google sign-in
-on a public domain (it has been [checked locally](auth/google-setup.md#4-what-is-and-isnt-verified)).
+on a public domain (it has been [checked locally](googleSignIn.md#4-what-is-and-isnt-verified)).
 
 ## Limits
 
 One server means one point of failure, and updates cause a short interruption. The API can run as several instances
-(see the [architecture](architecture/overview.md)), but this setup runs one.
+(see the [architecture](architecture.md)), but this setup runs one.

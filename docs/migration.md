@@ -1,6 +1,6 @@
 # MongoDB → PostgreSQL migration runbook
 
-The migrator (`apps/api/scripts/migrate-from-mongo.ts`, logic in `src/migration/mongo-migrator.ts`) is **read-only
+The migrator (`apps/api/scripts/migrateFromMongo.ts`, logic in `src/migration/mongoMigrator.ts`) is **read-only
 against MongoDB** and never deletes source data.
 
 ## What it does

@@ -30,7 +30,7 @@ the API (`GET /config`) rather than guessing.
      | Environment | URI |
      | --- | --- |
      | Local development | `http://localhost:3001/api/auth/callback/google` |
-     | Production ([deployment guide](../deployment.md)) | `https://api.example.com/api/auth/callback/google` |
+     | Production ([deployment guide](deployment.md)) | `https://api.example.com/api/auth/callback/google` |
 
    - Save, then copy the **Client ID** and **Client secret**.
 
@@ -77,7 +77,7 @@ Linking and unlinking require a *fresh* session (signed in within the last day).
 
 | Layer | Evidence |
 | --- | --- |
-| OAuth handling in this app: state, PKCE (S256), scopes, ID-token verification, cancel and tamper paths, linking rules | `e2e/google.spec.ts`, which runs Better Auth's real callback code against `e2e/support/mock-google.mjs` (a local OIDC stand-in that signs RS256 tokens and enforces PKCE, redirect URI and client credentials) |
+| OAuth handling in this app: state, PKCE (S256), scopes, ID-token verification, cancel and tamper paths, linking rules | `e2e/google.spec.ts`, which runs Better Auth's real callback code against `e2e/support/mockGoogle.mjs` (a local OIDC stand-in that signs RS256 tokens and enforces PKCE, redirect URI and client credentials) |
 | **Live Google, local machine** (2026-11-25): one test user, consent screen in *Testing*, Docker Compose stack | Signed in, signed out and signed in again to the same account. Google's account page listed only profile information for the app. The database held no Google access, refresh or ID token. |
 | **Live Google, everything else**: a public domain, a published consent screen, other accounts, connecting and disconnecting from Settings, cancelling at Google | **Not verified.** Run the checklist below with your own client. |
 
