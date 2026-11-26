@@ -9,7 +9,7 @@ import {
 } from "@syncspace/contracts";
 import { z } from "zod";
 import type { AuthenticatedUser } from "../auth/session.guard.js";
-import { CurrentUser } from "../common/current-user.decorator.js";
+import { CurrentUser } from "../common/currentUser.decorator.js";
 import { ZodPipe } from "../common/zod.pipe.js";
 import { WorkspacesService } from "./workspaces.service.js";
 

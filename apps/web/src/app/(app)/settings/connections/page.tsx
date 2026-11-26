@@ -5,11 +5,11 @@ import { KeyRound, Link2Off } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { GoogleButton } from "@/components/auth/google-button";
+import { GoogleButton } from "@/components/auth/googleButton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { authClient, authErrorMessage } from "@/lib/auth-client";
+import { authClient, authErrorMessage } from "@/lib/authClient";
 import { useConfig } from "@/lib/queries";
 import { timeAgo } from "@/lib/utils";
 

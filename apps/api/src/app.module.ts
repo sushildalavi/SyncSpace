@@ -5,13 +5,13 @@ import { AuthModule } from "./auth/auth.module.js";
 import { CollaborationModule } from "./collaboration/collaboration.module.js";
 import { DatabaseModule } from "./db/database.module.js";
 import { DocumentsModule } from "./documents/documents.module.js";
-import { ConfigController, RootController } from "./config.controller.js";
-import { HealthController } from "./health.controller.js";
+import { ConfigController, RootController } from "./system/config.controller.js";
+import { HealthController } from "./system/health.controller.js";
 import { IntegrationsModule } from "./integrations/integrations.module.js";
 import { MailModule } from "./mail/mail.module.js";
 import { MeModule } from "./me/me.module.js";
 import { RealtimeModule } from "./realtime/realtime.module.js";
-import { AppEnvModule } from "./shared/app-env.js";
+import { AppEnvModule } from "./common/appEnv.js";
 import { WorkspacesModule } from "./workspaces/workspaces.module.js";
 
 @Module({

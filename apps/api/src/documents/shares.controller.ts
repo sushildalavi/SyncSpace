@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, HttpCode, Inject, Ip, Param, Put } from "@nestjs/common";
 import { DocumentShareSchema, type DocumentShareInput } from "@syncspace/contracts";
 import type { AuthenticatedUser } from "../auth/session.guard.js";
-import { CurrentUser } from "../common/current-user.decorator.js";
+import { CurrentUser } from "../common/currentUser.decorator.js";
 import { ZodPipe } from "../common/zod.pipe.js";
 import { SharesService } from "./shares.service.js";
 

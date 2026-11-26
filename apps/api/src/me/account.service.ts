@@ -22,7 +22,7 @@ import {
   workspaceInvitation,
   workspaceMember
 } from "../db/schema.js";
-import { RealtimeBus } from "../realtime/realtime-bus.service.js";
+import { RealtimeBus } from "../realtime/realtimeBus.service.js";
 
 /** Stands in as the author of whatever a deleted person wrote in places other people still use. */
 export const DELETED_USER_ID = "deleted-user";

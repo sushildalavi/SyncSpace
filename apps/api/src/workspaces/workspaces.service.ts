@@ -9,8 +9,8 @@ import { DB, type Db } from "../db/database.module.js";
 import { document, user, workspace, workspaceInvitation, workspaceMember } from "../db/schema.js";
 import { MailerService } from "../mail/mailer.service.js";
 import { actionEmail } from "../mail/templates.js";
-import { RealtimeBus } from "../realtime/realtime-bus.service.js";
-import { APP_ENV, type AppEnv } from "../shared/app-env.js";
+import { RealtimeBus } from "../realtime/realtimeBus.service.js";
+import { APP_ENV, type AppEnv } from "../common/appEnv.js";
 
 const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 

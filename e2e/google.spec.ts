@@ -1,8 +1,8 @@
 /**
  * Google sign-in, exercised through Better Auth's real callback handling.
- * Google itself is replaced by e2e/support/mock-google.mjs, which signs genuine RS256 ID tokens
+ * Google itself is replaced by e2e/support/mockGoogle.mjs, which signs genuine RS256 ID tokens
  * and enforces PKCE. These tests prove this app's OAuth handling. They do not prove that Google's
- * live service accepts the configured client. See docs/auth/google-setup.md for the live checklist.
+ * live service accepts the configured client. See docs/googleSignIn.md for the live checklist.
  */
 import crypto from "node:crypto";
 import { expect, formAlert, mockGoogleConsent, newUser, registerAndSignIn, test } from "./support/helpers";

@@ -20,8 +20,8 @@ import { resolveSession } from "../auth/session.guard.js";
 import { DB, type Db } from "../db/database.module.js";
 import { document as documentTable, session as sessionTable } from "../db/schema.js";
 import { DocumentsService } from "../documents/documents.service.js";
-import { RealtimeBus, SERVER_CONNECTION, type BusEnvelope } from "../realtime/realtime-bus.service.js";
-import { APP_ENV, type AppEnv } from "../shared/app-env.js";
+import { RealtimeBus, SERVER_CONNECTION, type BusEnvelope } from "../realtime/realtimeBus.service.js";
+import { APP_ENV, type AppEnv } from "../common/appEnv.js";
 
 type Connection = {
   id: string;

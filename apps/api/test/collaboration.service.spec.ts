@@ -9,7 +9,7 @@ import type { Db } from "../src/db/database.module.js";
 import { session as sessionTable } from "../src/db/schema.js";
 import { DocumentsService } from "../src/documents/documents.service.js";
 import { SharesService } from "../src/documents/shares.service.js";
-import type { BusEnvelope, BusEvent, RealtimeBus } from "../src/realtime/realtime-bus.service.js";
+import type { BusEnvelope, BusEvent, RealtimeBus } from "../src/realtime/realtimeBus.service.js";
 import { WorkspacesService } from "../src/workspaces/workspaces.service.js";
 import type { AuthenticatedUser } from "../src/auth/session.guard.js";
 import { eq } from "drizzle-orm";

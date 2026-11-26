@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import { Page, PageHeader } from "@/components/app/page";
+import { Page, PageHeader } from "@/components/layout/pageLayout";
 import { cn } from "@/lib/utils";
 
 const tabs = [

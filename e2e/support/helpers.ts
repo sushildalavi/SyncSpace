@@ -164,11 +164,5 @@ export async function mockGoogleConsent(
   return captured;
 }
 
-export async function clickRevokeEverywhere(page: Page): Promise<void> {
-  await page.goto("/settings/security");
-  await page.getByRole("button", { name: "Sign out everywhere" }).click();
-  await page.waitForURL(/\/sign-in/);
-}
-
 /** Inline form error, excluding Next.js's own route announcer which also has role="alert". */
 export const formAlert = (page: Page) => page.locator('[role="alert"]:not(#__next-route-announcer__)');

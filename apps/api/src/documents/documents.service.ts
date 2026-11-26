@@ -6,7 +6,7 @@ import { AccessService } from "../access/access.service.js";
 import { AuditService } from "../audit/audit.service.js";
 import { DB, type Db } from "../db/database.module.js";
 import { document, documentFavorite, documentShare, documentSnapshot, documentUpdate, documentView, user, workspace, workspaceMember } from "../db/schema.js";
-import { RealtimeBus, SERVER_CONNECTION } from "../realtime/realtime-bus.service.js";
+import { RealtimeBus, SERVER_CONNECTION } from "../realtime/realtimeBus.service.js";
 
 /** Snapshot once this many updates have accumulated since the previous one. */
 export const SNAPSHOT_EVERY = 50;

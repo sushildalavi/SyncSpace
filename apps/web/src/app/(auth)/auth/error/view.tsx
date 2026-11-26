@@ -3,7 +3,7 @@
 import { TriangleAlert } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { AuthShell } from "@/components/auth/auth-shell";
+import { AuthShell } from "@/components/auth/authShell";
 import { Button } from "@/components/ui/button";
 
 type Explanation = { title: string; body: string; primary: { href: string; label: string }; secondary?: { href: string; label: string } };

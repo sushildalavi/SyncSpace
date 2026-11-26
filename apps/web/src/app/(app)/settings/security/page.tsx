@@ -8,14 +8,14 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
-import { TwoFactorSettings } from "@/components/app/two-factor-settings";
+import { TwoFactorSettings } from "@/components/account/twoFactorSettings";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field, FormError } from "@/components/ui/field";
-import { PasswordInput } from "@/components/ui/password-input";
+import { PasswordInput } from "@/components/ui/passwordInput";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
-import { authClient, authErrorMessage, useSession } from "@/lib/auth-client";
+import { authClient, authErrorMessage, useSession } from "@/lib/authClient";
 import type { SecurityEvent } from "@/lib/queries";
 import { timeAgo } from "@/lib/utils";
 

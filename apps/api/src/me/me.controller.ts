@@ -3,7 +3,7 @@ import { and, desc, eq } from "drizzle-orm";
 import type { IncomingHttpHeaders } from "node:http";
 import { AccountDeleteSchema, type AccountDeleteInput } from "@syncspace/contracts";
 import type { AuthContext, AuthenticatedUser } from "../auth/session.guard.js";
-import { CurrentUser } from "../common/current-user.decorator.js";
+import { CurrentUser } from "../common/currentUser.decorator.js";
 import { ZodPipe } from "../common/zod.pipe.js";
 import { DB, type Db } from "../db/database.module.js";
 import { auditEvent } from "../db/schema.js";

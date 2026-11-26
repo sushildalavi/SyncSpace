@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
-import { SignUpForm } from "./sign-up-form";
+import { SignUpForm } from "./signUpForm";
 
 export const metadata: Metadata = { title: "Create account" };
 

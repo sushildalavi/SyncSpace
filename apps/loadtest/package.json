@@ -10,8 +10,7 @@
   },
   "dependencies": {
     "ws": "^8.18.3",
-    "yjs": "^13.6.27",
-    "@syncspace/contracts": "workspace:*"
+    "yjs": "^13.6.27"
   },
   "devDependencies": {
     "@types/node": "^24.3.1",

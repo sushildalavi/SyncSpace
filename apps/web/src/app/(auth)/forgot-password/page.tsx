@@ -6,11 +6,11 @@ import Link from "next/link";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
-import { AuthShell } from "@/components/auth/auth-shell";
+import { AuthShell } from "@/components/auth/authShell";
 import { Button } from "@/components/ui/button";
 import { Field, FormError } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { authClient, authErrorMessage } from "@/lib/auth-client";
+import { authClient, authErrorMessage } from "@/lib/authClient";
 
 const Schema = z.object({ email: z.string().trim().min(1, "Enter your email address").email("Enter a valid email address") });
 

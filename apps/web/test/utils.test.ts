@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CollabStatus } from "../src/lib/collab/provider";
-import { describeStatus } from "../src/components/editor/sync-status";
+import { describeStatus } from "../src/components/editor/syncStatus";
 import { safeNextPath, initials } from "../src/lib/utils";
 
 const base: CollabStatus = { connection: "connected", closedReason: null, closedCode: null, synced: true, role: "editor", pending: 0, lastSavedAt: null, editsRejected: false };

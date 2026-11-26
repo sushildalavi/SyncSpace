@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
-import { TwoFactorForm } from "./two-factor-form";
+import { TwoFactorForm } from "./twoFactorForm";
 
 export const metadata: Metadata = { title: "Two-factor sign-in" };
 

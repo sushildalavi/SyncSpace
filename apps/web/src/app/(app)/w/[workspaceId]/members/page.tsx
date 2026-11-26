@@ -1,8 +1,8 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { MembersPanel } from "@/components/app/members-panel";
-import { Page, PageHeader } from "@/components/app/page";
+import { MembersPanel } from "@/components/workspace/membersPanel";
+import { Page, PageHeader } from "@/components/layout/pageLayout";
 
 export default function MembersPage() {
   const { workspaceId } = useParams<{ workspaceId: string }>();

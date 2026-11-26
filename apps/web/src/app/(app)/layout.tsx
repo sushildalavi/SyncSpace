@@ -2,10 +2,10 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, type ReactNode } from "react";
-import { AppShell } from "@/components/app/app-shell";
+import { AppShell } from "@/components/layout/appShell";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useSession } from "@/lib/auth-client";
+import { useSession } from "@/lib/authClient";
 
 /** Every page in this group requires a session. The API enforces it too, so this only drives navigation. */
 export default function AppLayout({ children }: { children: ReactNode }) {

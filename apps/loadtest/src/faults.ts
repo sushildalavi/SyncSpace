@@ -13,7 +13,7 @@
  *   - delivery:      every update a writer produced was eventually acknowledged,
  *   - convergence:   every client ends with exactly the persisted document.
  *
- * Needs docker compose (for Redis) and `lsof`. Run through scripts/fault-injection.sh.
+ * Needs docker compose (for Redis) and `lsof`. Run through scripts/faultInjection.sh.
  */
 import { exec as execCb, execSync } from "node:child_process";
 import { randomUUID } from "node:crypto";

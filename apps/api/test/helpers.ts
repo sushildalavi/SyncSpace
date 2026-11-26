@@ -8,7 +8,7 @@ import type { AuthenticatedUser } from "../src/auth/session.guard.js";
 import type { Db } from "../src/db/database.module.js";
 import { MIGRATIONS_FOLDER } from "../src/db/migrate.js";
 import * as schema from "../src/db/schema.js";
-import type { BusEvent } from "../src/realtime/realtime-bus.service.js";
+import type { BusEvent } from "../src/realtime/realtimeBus.service.js";
 
 export async function createTestDb(): Promise<{ db: Db; close: () => Promise<void> }> {
   const client = new PGlite();

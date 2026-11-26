@@ -12,7 +12,7 @@ import type { Auth } from "./auth/auth.factory.js";
 import { originCheck } from "./common/origin.middleware.js";
 import { DB, type Db } from "./db/database.module.js";
 import { runMigrations } from "./db/migrate.js";
-import { APP_ENV, type AppEnv } from "./shared/app-env.js";
+import { APP_ENV, type AppEnv } from "./common/appEnv.js";
 
 async function bootstrap(): Promise<void> {
   // Better Auth reads the raw request body itself, so Nest's body parser is disabled

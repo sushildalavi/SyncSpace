@@ -19,7 +19,7 @@ const env = {
   GOOGLE_CLIENT_ID: "test-client-id",
   GOOGLE_CLIENT_SECRET: "test-client-secret",
   MOCK_GOOGLE_URL: "http://localhost:3199",
-  NODE_OPTIONS: `--import=${path.join(root, "e2e/support/google-fetch-patch.mjs")}`
+  NODE_OPTIONS: `--import=${path.join(root, "e2e/support/googleFetchPatch.mjs")}`
 };
 
 export default defineConfig({
@@ -32,7 +32,7 @@ export default defineConfig({
   reporter: process.env.CI ? [["github"], ["html", { open: "never" }]] : [["list"]],
   use: { baseURL: WEB, trace: "retain-on-failure", screenshot: "only-on-failure" },
   webServer: [
-    { command: "node e2e/support/mock-google.mjs", url: "http://localhost:3199/health", reuseExistingServer: !process.env.CI, env: { MOCK_GOOGLE_PORT: "3199", GOOGLE_CLIENT_ID: "test-client-id", GOOGLE_CLIENT_SECRET: "test-client-secret" } },
+    { command: "node e2e/support/mockGoogle.mjs", url: "http://localhost:3199/health", reuseExistingServer: !process.env.CI, env: { MOCK_GOOGLE_PORT: "3199", GOOGLE_CLIENT_ID: "test-client-id", GOOGLE_CLIENT_SECRET: "test-client-secret" } },
     { command: "npx tsx src/main.ts", cwd: "apps/api", url: `${API}/health`, reuseExistingServer: !process.env.CI, timeout: 60_000, env },
     {
       command: "npx next build && npx next start -p 3100",

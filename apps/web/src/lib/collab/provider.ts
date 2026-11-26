@@ -1,7 +1,7 @@
 import * as Y from "yjs";
 import { CLOSE_CODES, COLLAB_LIMITS, type WorkspaceRole } from "@syncspace/contracts";
-import { OfflineStore, type PendingUpdate } from "./offline-store";
-import { numericId, RemoteAwareness } from "./remote-awareness";
+import { OfflineStore, type PendingUpdate } from "./offlineStore";
+import { numericId, RemoteAwareness } from "./remoteAwareness";
 
 export type ConnectionState = "connecting" | "connected" | "reconnecting" | "offline" | "closed";
 

@@ -4,8 +4,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { ProfileUpdateSchema } from "@syncspace/contracts";
 import { BadgeCheck, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
-import { ChangeEmail } from "@/components/app/change-email";
-import { DeleteAccount } from "@/components/app/delete-account";
+import { ChangeEmail } from "@/components/account/changeEmail";
+import { DeleteAccount } from "@/components/account/deleteAccount";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { Avatar } from "@/components/ui/avatar";
@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field, FormNotice } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { authClient, authErrorMessage, useSession } from "@/lib/auth-client";
+import { authClient, authErrorMessage, useSession } from "@/lib/authClient";
 
 export default function ProfileSettings() {
   const { data } = useSession();

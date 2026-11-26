@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import nodemailer, { type Transporter } from "nodemailer";
-import { APP_ENV } from "../shared/app-env.js";
+import { APP_ENV } from "../common/appEnv.js";
 
 export type MailMessage = { to: string; subject: string; text: string; html?: string };
 

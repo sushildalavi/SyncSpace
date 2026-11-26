@@ -1,14 +1,14 @@
 "use client";
 
-import { usePageTitle } from "@/lib/use-page-title";
+import { usePageTitle } from "@/hooks/usePageTitle";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { MailPlus } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
-import { QueryError } from "@/components/app/error-state";
-import { Page, RoleBadgeLabel } from "@/components/app/page";
+import { QueryError } from "@/components/layout/errorState";
+import { Page, RoleBadgeLabel } from "@/components/layout/pageLayout";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";

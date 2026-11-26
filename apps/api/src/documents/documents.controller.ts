@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, HttpCode, Inject, Param, ParseIntPipe, Patch, Post, Put, Query } from "@nestjs/common";
 import { DocumentCreateSchema, DocumentRestoreSchema, DocumentUpdateMetaSchema } from "@syncspace/contracts";
 import type { AuthenticatedUser } from "../auth/session.guard.js";
-import { CurrentUser } from "../common/current-user.decorator.js";
+import { CurrentUser } from "../common/currentUser.decorator.js";
 import { ZodPipe } from "../common/zod.pipe.js";
 import { DocumentsService } from "./documents.service.js";
 
