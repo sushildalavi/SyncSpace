@@ -85,7 +85,6 @@ export type MemberInviteInput = z.infer<typeof MemberInviteSchema>;
 export const MemberRoleUpdateSchema = z.object({ role: WorkspaceRoleSchema });
 
 export const DocumentCreateSchema = z.object({ title: z.string().trim().min(1).max(160) });
-export type DocumentCreateInput = z.infer<typeof DocumentCreateSchema>;
 
 export const DocumentShareSchema = z.object({
   email: z.string().trim().toLowerCase().email().max(254),
@@ -104,7 +103,6 @@ export const DocumentRestoreSchema = z.object({ version: z.number().int().min(1)
 
 export const DocumentUpdateMetaSchema = z.object({ title: z.string().trim().min(1).max(160) });
 
-export const IntegrationProviderSchema = z.enum(["slack", "teams"]);
 export const IntegrationUpsertSchema = z.object({
   name: z.string().trim().min(1).max(120),
   webhookUrl: z.string().url().max(2048),
@@ -122,15 +120,15 @@ export const ProfileUpdateSchema = z.object({ name: z.string().trim().min(1).max
 /* Collaboration protocol                                              */
 /* ------------------------------------------------------------------ */
 
+export const COLLAB_LIMITS = { maxMessageBytes: 2_000_000, maxMessagesPerSecond: 40, maxUpdateChars: 1_400_000 } as const;
+
 /** Sent by clients. The server assigns versions, so none is accepted here. */
 export const CollaborationUpdateSchema = z.object({
   documentId: z.string().min(1),
   updateId: z.string().min(1).max(64),
   /** base64 encoded Yjs incremental update */
-  /* at most COLLAB_LIMITS.maxUpdateChars, which is declared below */
-  payload: z.string().min(1).max(1_400_000)
+  payload: z.string().min(1).max(COLLAB_LIMITS.maxUpdateChars)
 });
-export type CollaborationUpdateInput = z.infer<typeof CollaborationUpdateSchema>;
 
 /** Sent by clients. The server fills in identity, so none is accepted here. */
 export const PresenceUpdateSchema = z.object({
@@ -138,15 +136,6 @@ export const PresenceUpdateSchema = z.object({
   cursor: z.record(z.string(), z.unknown()).optional(),
   status: z.enum(["active", "idle"])
 });
-export type PresenceUpdateInput = z.infer<typeof PresenceUpdateSchema>;
-
-export type PresenceState = {
-  userId: string;
-  userName: string;
-  color: string;
-  status: "active" | "idle" | "offline";
-  cursor?: Record<string, unknown>;
-};
 
 /** Application close codes sent on the collaboration socket. */
 export const CLOSE_CODES = {
@@ -159,8 +148,6 @@ export const CLOSE_CODES = {
   sessionRevoked: 4411,
   rateLimited: 4429
 } as const;
-
-export const COLLAB_LIMITS = { maxMessageBytes: 2_000_000, maxMessagesPerSecond: 40, maxUpdateChars: 1_400_000 } as const;
 
 /** Deterministic, accessible presence colors. */
 export const PRESENCE_COLORS = [

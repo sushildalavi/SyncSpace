@@ -5,7 +5,7 @@
  * live service accepts the configured client. See docs/googleSignIn.md for the live checklist.
  */
 import crypto from "node:crypto";
-import { expect, formAlert, mockGoogleConsent, newUser, registerAndSignIn, test } from "./support/helpers";
+import { expect, formAlert, mockGoogleConsent, registerAndSignIn, test } from "./support/helpers";
 
 const google = (label: string) => {
   const id = crypto.randomBytes(4).toString("hex");
@@ -167,5 +167,3 @@ test.describe("Google sign-in", () => {
     await expect(formAlert(page)).toContainText("don't match");
   });
 });
-
-void newUser;

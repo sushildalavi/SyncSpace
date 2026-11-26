@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { useCreateWorkspace } from "@/lib/queries";
@@ -53,7 +53,6 @@ export function CreateWorkspaceDialog({ open, onOpenChange }: { open: boolean; o
           <DialogDescription>A workspace holds documents and the people who work on them. You&apos;ll be its first owner.</DialogDescription>
         </DialogHeader>
         <CreateWorkspaceForm onDone={() => onOpenChange(false)} />
-        <DialogFooter className="hidden" />
       </DialogContent>
     </Dialog>
   );

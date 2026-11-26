@@ -31,8 +31,6 @@
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "test:e2e": "playwright test",
-    "format": "prettier --write .",
-    "format:check": "prettier --check .",
     "db:generate": "pnpm --filter @syncspace/api db:generate",
     "db:migrate": "pnpm --filter @syncspace/api db:migrate"
   },
@@ -44,7 +42,6 @@
     "@typescript-eslint/eslint-plugin": "^8.40.0",
     "@typescript-eslint/parser": "^8.40.0",
     "eslint": "^9.39.5",
-    "prettier": "^3.5.3",
     "turbo": "^2.5.6"
   }
 }

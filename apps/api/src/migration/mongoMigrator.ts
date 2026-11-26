@@ -88,7 +88,7 @@ const sha = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("he
  *
  *  - ids are preserved (they were already UUIDs), so links and bookmarks keep working
  *  - safe to re-run: rows that already exist are left untouched
- *  - each document migrates in its own transaction (document + updates + snapshot, all or nothing)
+ *  - the whole run is one transaction, so a failure part way through leaves PostgreSQL as it was
  *  - server-side versions are assigned in the original arrival order, because legacy versions were client-chosen
  *  - legacy plain-text bodies (Y.Text "body") also get a rich-text copy so the new editor shows them
  *  - with dryRun the same validation runs inside a transaction that is rolled back

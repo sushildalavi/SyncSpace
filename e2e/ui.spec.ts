@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { API, WEB, createDocument, createWorkspace, expect, registerAndSignIn, scan, test } from "./support/helpers";
+import { createDocument, createWorkspace, expect, registerAndSignIn, scan, test } from "./support/helpers";
 
 const viewports = [
   { name: "mobile", width: 375, height: 812 },
@@ -15,7 +15,6 @@ async function seed(page: Page) {
   await page.getByRole("textbox", { name: "Document body" }).click();
   await page.keyboard.type("# Heading\nSome body text for the layout checks.");
   await expect(page.getByTestId("sync-status")).toHaveAttribute("data-state", "Saved");
-  void API;
   return { workspaceId, documentId };
 }
 
@@ -232,5 +231,3 @@ test.describe("accessibility (axe, WCAG 2.2 AA rules)", () => {
     });
   }
 });
-
-void WEB;
