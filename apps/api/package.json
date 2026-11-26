@@ -14,11 +14,11 @@
     "migrate:mongo": "tsx scripts/migrateFromMongo.ts"
   },
   "dependencies": {
-    "@nestjs/common": "^11.1.6",
-    "@nestjs/core": "^11.1.6",
-    "@nestjs/platform-express": "^11.1.6",
-    "@nestjs/platform-ws": "^11.1.6",
-    "@nestjs/websockets": "^11.1.6",
+    "@nestjs/common": "^11.2.12",
+    "@nestjs/core": "^11.2.12",
+    "@nestjs/platform-express": "^11.2.12",
+    "@nestjs/platform-ws": "^11.2.12",
+    "@nestjs/websockets": "^11.2.12",
     "@node-rs/argon2": "^2.2.2",
     "@syncspace/config": "workspace:*",
     "@syncspace/contracts": "workspace:*",
