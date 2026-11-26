@@ -1,10 +1,11 @@
 /**
  * Fault-injection run for the collaboration path.
  *
- * Writers and readers connect across two API instances and keep editing while the harness:
- *   1. pauses Redis (cross-instance fan-out stalls),
- *   2. restarts Redis (the event stream is wiped, so events are LOST, not merely delayed),
- *   3. kills one API instance with SIGKILL (its sockets drop without a close frame).
+ * Writers and readers connect across two API instances and keep editing while the harness breaks things underneath
+ * them. Scenarios (--scenario):
+ *   redis     Redis pauses; one instance freezes while the event stream is wiped; that instance is then kill -9'd.
+ *   database  PostgreSQL stalls, then crashes and restarts, while some clients reconnect.
+ *   outage    PostgreSQL, then Redis, is down for --outage seconds.
  *
  * Clients behave like the real editor: unacknowledged updates are kept and replayed (idempotent by updateId) after
  * reconnecting to a surviving instance. Afterwards it checks
@@ -30,6 +31,10 @@ const { values } = parseArgs({
     interval: { type: "string", default: "100" },
     "kill-port": { type: "string", default: "3202" },
     "no-sync-check": { type: "boolean", default: false },
+    scenario: { type: "string", default: "redis" },
+    outage: { type: "string", default: "90" },
+    "redis-container": { type: "string", default: "syncspace-faults-redis" },
+    "pg-container": { type: "string", default: "syncspace-faults-pg" },
     json: { type: "boolean", default: false }
   }
 });
@@ -41,6 +46,14 @@ const readersPerDoc = Number(values.readers);
 const interval = Number(values.interval);
 const killPort = values["kill-port"]!;
 const syncChecks = !values["no-sync-check"];
+const scenario = values.scenario!;
+const outageSeconds = Number(values.outage);
+const redisBox = values["redis-container"]!;
+const pgBox = values["pg-container"]!;
+/** Close codes after which the real editor gives up instead of reconnecting. An outage must never produce one. */
+const TERMINAL_CODES = new Set([4401, 4403, 4404, 4410, 4411]);
+const terminated: number[] = [];
+let serverErrors = 0;
 
 const exec = (command: string) => new Promise<void>((resolve) => execCb(command, () => resolve()));
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -63,8 +76,6 @@ async function call(api: string, path: string, init: { method?: string; body?: u
 
 const acked = new Set<string>(); // markers the server acknowledged
 const produced = new Set<string>(); // markers writers created
-let ackGapMax = 0;
-let lastAckAt = performance.now();
 const ackLatencies: number[] = [];
 
 class Client {
@@ -138,12 +149,12 @@ class Client {
               this.pending.delete(payload.updateId);
               entry.markers.forEach((marker) => acked.add(marker));
               ackLatencies.push(performance.now() - entry.at);
-              const now = performance.now();
-              ackGapMax = Math.max(ackGapMax, now - lastAckAt);
-              lastAckAt = now;
             }
             break;
           }
+          case "error":
+            serverErrors += 1;
+            break;
           case "sync.check":
             if (!syncChecks) break;
             // Two consecutive checks behind (so in-flight events aren't mistaken for loss) -> ask for the state.
@@ -156,7 +167,11 @@ class Client {
             break;
         }
       });
-      ws.on("close", () => {
+      ws.on("close", (code) => {
+        if (TERMINAL_CODES.has(code)) {
+          terminated.push(code);
+          this.stopped = true;
+        }
         if (this.ws === ws) {
           this.ws = null;
           this.synced = false;
@@ -211,6 +226,11 @@ class Client {
     return this.doc.getText("body").toString();
   }
 
+  /** Drops the socket as a flaky network would, so the client has to connect again. */
+  flap() {
+    this.ws?.terminate();
+  }
+
   close() {
     this.stopped = true;
     this.ws?.close();
@@ -252,47 +272,65 @@ async function main() {
   const persistedFor = (documentId: string) =>
     new Promise<string>((resolve, reject) => {
       const ws = new WebSocket(`${survivor.replace("http", "ws")}/collaboration?documentId=${documentId}&clientId=${randomUUID()}`, { headers: { cookie, origin } });
+      const timer = setTimeout(() => ws.terminate(), 10_000);
       ws.on("message", (raw) => {
         const message = JSON.parse(raw.toString());
         if (message.type === "document.snapshot") {
           const d = new Y.Doc();
           Y.applyUpdate(d, fromB64(message.payload.snapshot));
-          ws.close();
+          clearTimeout(timer);
           resolve(d.getText("body").toString());
+          ws.close();
         }
       });
-      ws.on("error", reject);
+      ws.on("error", () => undefined);
+      ws.on("close", (code) => {
+        clearTimeout(timer);
+        reject(new Error(`closed ${code} before the document arrived`));
+      });
     });
 
   let persisted = new Map<string, string>();
+  const readPersisted = async () => {
+    persisted = new Map(await Promise.all(docIds.map(async (id) => [id, await persistedFor(id)] as const)));
+  };
   /** Waits until every update is acknowledged and every client holds exactly the persisted document. */
   async function settle(maxMs: number) {
     const began = performance.now();
     while (performance.now() - began < maxMs) {
-      persisted = new Map(await Promise.all(docIds.map(async (id) => [id, await persistedFor(id)] as const)));
-      const stale = clients.filter((c) => c.text() !== persisted.get(c.documentId)).length;
-      if (clients.every((c) => c.pending.size === 0) && stale === 0) return { settled: true, seconds: Number(((performance.now() - began) / 1000).toFixed(1)), stale: 0 };
+      try {
+        await readPersisted();
+        const stale = clients.filter((c) => c.text() !== persisted.get(c.documentId)).length;
+        if (clients.every((c) => c.pending.size === 0) && stale === 0) return { settled: true, seconds: Number(((performance.now() - began) / 1000).toFixed(1)), stale: 0 };
+      } catch (error) {
+        log(`can't read the document yet: ${String(error)}`);
+      }
       await sleep(1000);
     }
-    persisted = new Map(await Promise.all(docIds.map(async (id) => [id, await persistedFor(id)] as const)));
+    await readPersisted().catch(() => undefined);
     return { settled: false, seconds: null as number | null, stale: clients.filter((c) => c.text() !== persisted.get(c.documentId)).length };
   }
 
   const pidOnPort = (port: string) => `lsof -ti tcp:${port} -sTCP:LISTEN`;
-  const flushLoop = `docker compose exec -T redis sh -c 'for i in $(seq 1 25); do redis-cli FLUSHALL >/dev/null; sleep 0.2; done'`;
+  const flushLoop = `docker exec ${redisBox} sh -c 'for i in $(seq 1 25); do redis-cli FLUSHALL >/dev/null; sleep 0.2; done'`;
 
   let writing = true;
-  const startWriters = () =>
-    writers.map(async (client, w) => {
+  const nextMarker = new Map<number, number>();
+  const startWriters = () => {
+    writing = true;
+    return writers.map(async (client, w) => {
       for (let n = nextMarker.get(w) ?? 0; writing; n += 1) {
         nextMarker.set(w, n + 1);
         client.write(`[w${w}:${n}]`);
         await sleep(interval * (0.6 + Math.random() * 0.8));
       }
     });
-  const nextMarker = new Map<number, number>();
+  };
+  const stopWriters = async (loops: Promise<void>[]) => {
+    writing = false;
+    await Promise.all(loops);
+  };
 
-  /* ---------- Phase A: Redis pause, then a frozen instance whose events are wiped ---------- */
   const faultsApplied: string[] = [];
   const at = async (ms: number, label: string, action: () => void | Promise<void>, since: number) => {
     const wait = ms - (performance.now() - since);
@@ -301,54 +339,91 @@ async function main() {
     faultsApplied.push(label);
     await action();
   };
-  const phaseA = performance.now();
-  let loops = startWriters();
-  await at(5000, "PAUSE redis (4 s): fan-out stalls", () => sh("docker compose pause redis"), phaseA);
-  await at(9000, "UNPAUSE redis", () => sh("docker compose unpause redis"), phaseA);
-  await at(12000, `FREEZE instance :${killPort} (SIGSTOP, like a long GC/VM stall)`, () => sh(`${pidOnPort(killPort)} | xargs kill -STOP`), phaseA);
-  await at(12500, "FLUSHALL on Redis for 5 s: events published during the freeze are destroyed", () => void exec(flushLoop), phaseA);
-  await at(18500, `RESUME instance :${killPort} (SIGCONT). Its sockets are still open but it missed events.`, () => sh(`${pidOnPort(killPort)} | xargs kill -CONT`), phaseA);
-  await at(30000, "stop writers", () => undefined, phaseA);
-  writing = false;
-  await Promise.all(loops);
+  /** A few readers and one writer per document lose their connection and must come back. */
+  const flapSome = () => clients.filter((c) => c.index % 4 === 0).forEach((c) => c.flap());
 
-  log(`Checking convergence BEFORE any reconnect can hide a missed event (produced ${produced.size}, acked ${acked.size})…`);
-  const beforeKill = await settle(35_000);
-  log(beforeKill.settled ? `converged in ${beforeKill.seconds}s` : `NOT converged: ${beforeKill.stale} client(s) are behind the persisted document`);
+  const checkpoints: Array<{ after: string; converged: boolean; seconds: number | null; staleClients: number }> = [];
+  const checkpoint = async (after: string, maxMs: number) => {
+    log(`Checking convergence after ${after} (produced ${produced.size}, acked ${acked.size})…`);
+    const result = await settle(maxMs);
+    checkpoints.push({ after, converged: result.settled, seconds: result.seconds, staleClients: result.stale });
+    log(result.settled ? `converged in ${result.seconds}s` : `NOT converged: ${result.stale} client(s) behind, ${clients.reduce((n, c) => n + c.pending.size, 0)} update(s) unacknowledged`);
+  };
 
-  /* ---------- Phase B: more edits, then kill -9 an instance ---------- */
-  writing = true;
-  const phaseB = performance.now();
-  loops = startWriters();
-  await at(3000, `KILL -9 instance :${killPort}: sockets drop without a close frame`, () => sh(`${pidOnPort(killPort)} | xargs kill -9`), phaseB);
-  await at(10000, "stop writers", () => undefined, phaseB);
-  writing = false;
-  await Promise.all(loops);
-  log(`Writers stopped. Waiting for the final settle…`);
-  const finalSettle = await settle(45_000);
-  const settledAt = finalSettle.settled ? finalSettle.seconds : null;
+  if (scenario === "redis") {
+    const began = performance.now();
+    const loops = startWriters();
+    await at(5000, "PAUSE redis (4 s): fan-out stalls", () => sh(`docker pause ${redisBox}`), began);
+    await at(9000, "UNPAUSE redis", () => sh(`docker unpause ${redisBox}`), began);
+    await at(12000, `FREEZE instance :${killPort} (SIGSTOP, like a long GC/VM stall)`, () => sh(`${pidOnPort(killPort)} | xargs kill -STOP`), began);
+    await at(12500, "FLUSHALL on Redis for 5 s: events published during the freeze are destroyed", () => void exec(flushLoop), began);
+    await at(18500, `RESUME instance :${killPort} (SIGCONT). Its sockets are still open but it missed events.`, () => sh(`${pidOnPort(killPort)} | xargs kill -CONT`), began);
+    await at(30000, "stop writers", () => undefined, began);
+    await stopWriters(loops);
+    // checked BEFORE any reconnect can hide a missed event
+    await checkpoint("the frozen instance", 35_000);
+    const second = performance.now();
+    const more = startWriters();
+    await at(3000, `KILL -9 instance :${killPort}: sockets drop without a close frame`, () => sh(`${pidOnPort(killPort)} | xargs kill -9`), second);
+    await at(10000, "stop writers", () => undefined, second);
+    await stopWriters(more);
+    await checkpoint("the crash", 45_000);
+  } else if (scenario === "database") {
+    const began = performance.now();
+    const loops = startWriters();
+    await at(5000, "PAUSE postgres (6 s): writes hang", () => sh(`docker pause ${pgBox}`), began);
+    await at(8000, "drop some connections while postgres is stalled", flapSome, began);
+    await at(11000, "UNPAUSE postgres", () => sh(`docker unpause ${pgBox}`), began);
+    await at(18000, "KILL postgres (crash): every database connection is severed", () => sh(`docker kill ${pgBox}`), began);
+    await at(20000, "drop some connections while postgres is down", flapSome, began);
+    await at(27000, "START postgres", () => sh(`docker start ${pgBox}`), began);
+    await at(40000, "stop writers", () => undefined, began);
+    await stopWriters(loops);
+    await checkpoint("the database faults", 60_000);
+  } else if (scenario === "outage") {
+    for (const [name, box] of [["postgres", pgBox], ["redis", redisBox]] as const) {
+      const began = performance.now();
+      const loops = startWriters();
+      await at(3000, `STOP ${name} for ${outageSeconds} s`, () => sh(`docker stop -t 1 ${box}`), began);
+      await at(3000 + (outageSeconds * 1000) / 2, `drop some connections halfway through the ${name} outage`, flapSome, began);
+      await at(3000 + outageSeconds * 1000, `START ${name}`, () => sh(`docker start ${box}`), began);
+      await at(13000 + outageSeconds * 1000, "stop writers", () => undefined, began);
+      await stopWriters(loops);
+      await checkpoint(`the ${name} outage`, 90_000);
+    }
+  } else {
+    throw new Error(`unknown scenario "${scenario}"`);
+  }
+
+  const expectedAlive = scenario === "redis" ? apis.filter((api) => api === survivor) : apis;
+  const alive = await Promise.all(expectedAlive.map((api) => fetch(`${api}/health`).then(async (r) => ((await r.json()) as { ok: boolean }).ok, () => false)));
 
   const markersIn = (text: string) => new Set(text.match(/\[w\d+:\d+\]/g) ?? []);
   const persistedMarkers = new Set(docIds.flatMap((id) => [...markersIn(persisted.get(id) ?? "")]));
   const ackedButMissing = [...acked].filter((marker) => !persistedMarkers.has(marker));
   const neverAcked = [...produced].filter((marker) => !acked.has(marker));
-  const stale = clients.filter((c) => c.text() !== persisted.get(c.documentId));
   const sorted = [...ackLatencies].sort((a, b) => a - b);
   const pct = (p: number) => sorted[Math.min(sorted.length - 1, Math.ceil((p / 100) * sorted.length) - 1)] ?? NaN;
 
   const result = {
-    config: { clients: clients.length, writers: writers.length, instances: apis.length, syncChecks },
+    config: { scenario, clients: clients.length, writers: writers.length, instances: apis.length, syncChecks, ...(scenario === "outage" ? { outageSeconds } : {}) },
     faults: faultsApplied,
-    beforeAnyReconnect: { converged: beforeKill.settled, secondsToConverge: beforeKill.seconds, staleClients: beforeKill.stale },
+    checkpoints,
     delivery: { produced: produced.size, acknowledged: acked.size, neverAcknowledged: neverAcked.length, stillPending: clients.reduce((n, c) => n + c.pending.size, 0) },
     durability: { ackedButMissingFromPersistedDoc: ackedButMissing.length },
-    finalConvergence: { settled: settledAt !== null, secondsToSettle: settledAt, staleClients: stale.length },
-    recovery: { reconnects: clients.reduce((n, c) => n + c.reconnects, 0), resyncRequests: clients.reduce((n, c) => n + c.resyncs, 0) },
-    ackLatencyMs: { p50: Math.round(pct(50)), p95: Math.round(pct(95)), p99: Math.round(pct(99)), longestGapBetweenAcksMs: Math.round(ackGapMax) }
+    servers: { expectedAlive: expectedAlive.length, healthy: alive.filter(Boolean).length },
+    clientsThatGaveUp: terminated,
+    recovery: { reconnects: clients.reduce((n, c) => n + c.reconnects, 0), resyncRequests: clients.reduce((n, c) => n + c.resyncs, 0), serverErrorMessages: serverErrors },
+    ackLatencyMs: { p50: Math.round(pct(50)), p95: Math.round(pct(95)), p99: Math.round(pct(99)) }
   };
   clients.forEach((c) => c.close());
   console.log(values.json ? JSON.stringify(result) : JSON.stringify(result, null, 2));
-  const ok = ackedButMissing.length === 0 && neverAcked.length === 0 && settledAt !== null && stale.length === 0 && beforeKill.settled;
+  const ok =
+    ackedButMissing.length === 0 &&
+    neverAcked.length === 0 &&
+    terminated.length === 0 &&
+    alive.every(Boolean) &&
+    checkpoints.every((item) => item.converged);
   log(ok ? "PASS" : "FAIL");
   process.exit(ok ? 0 : 1);
 }

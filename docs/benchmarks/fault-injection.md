@@ -1,57 +1,75 @@
 # Fault injection
 
-**Reproduce:** `docker compose up -d postgres redis && scripts/fault-injection.sh` (add `--no-sync-check` to disable the
-resync mechanism and see what it prevents). Needs `lsof`. About 75 seconds.
+**Reproduce** (needs Docker and `lsof`; it starts its own throwaway PostgreSQL and Redis, so development data is not touched):
+
+```bash
+scripts/fault-injection.sh --scenario redis               # about 75 s
+scripts/fault-injection.sh --scenario database            # about 45 s
+scripts/fault-injection.sh --scenario outage --outage 90  # about 4 min
+```
+
+Add `--no-sync-check` to the `redis` scenario to disable the resync mechanism and see what it prevents.
 
 Two API instances share one PostgreSQL and one Redis. 22 clients (6 writers, 16 readers, 2 documents) are spread across
-both instances and keep editing while `apps/loadtest/src/faults.ts` injects:
+both and keep editing while `apps/loadtest/src/faults.ts` breaks things. Clients behave like the real editor:
+unacknowledged updates are kept and replayed, and a close code that makes the editor give up stops the client for good.
 
-| When | Fault | What it models |
-| --- | --- | --- |
-| 5 s | `docker pause redis` for 4 s | Redis stalls: fan-out stops, publishes queue |
-| 12 s | `SIGSTOP` instance :3202 | A long GC pause or VM stall: the process is frozen but its TCP sockets stay open |
-| 12.5 s | `FLUSHALL` on Redis for 5 s | Events published during the freeze are destroyed, so the frozen instance can never read them |
-| 18.5 s | `SIGCONT` the instance | It resumes with open sockets and missed events |
-| 30 s | writers stop; **convergence is checked before any reconnect** | Reconnecting would hide a missed event, so this is measured first |
-| then | a second write burst, `kill -9` on :3202 after 3 s | A crash: sockets drop with no close frame |
+**Pass criteria:** every update a writer produced is eventually acknowledged; no acknowledged update is missing from the
+persisted document; every client ends with exactly the persisted document; no client gives up; every server that was not
+deliberately killed is still healthy.
 
-Clients behave like the real editor: unacknowledged updates are kept and replayed after reconnecting to a surviving
-instance. Pass criteria: every update a writer produced is eventually acknowledged; **no acknowledged update is missing from the
-persisted document**; every client ends with exactly the persisted document, including before the crash.
+## Scenarios
+
+| Scenario | Faults |
+| --- | --- |
+| `redis` | Redis paused 4 s. One instance frozen (`SIGSTOP`) while the event stream is wiped for 5 s, then resumed. Convergence is checked **before any reconnect**, which would hide a missed event. Then `kill -9` on that instance. |
+| `database` | PostgreSQL paused 6 s, then killed and started again 9 s later. Some clients lose their connection and reconnect during both. |
+| `outage` | PostgreSQL stopped for 90 s, then Redis stopped for 90 s. Some clients reconnect halfway through each. |
 
 ## Results (Apple M3, Node 26, Docker PostgreSQL 16 / Redis 7)
 
-| | Sync checks OFF | Sync checks ON |
-| --- | --- | --- |
-| Updates produced / acknowledged | 2,382 / 2,382 | 2,371 / 2,371 |
-| Acknowledged but missing from the document | 0 | 0 |
-| Clients behind the persisted doc, before any reconnect | **8 (still behind after 35 s)** | 0 |
-| Resync requests | 0 | 8 |
-| Reconnects (the crash) | 14 | 14 |
-| Result | **FAIL** | **PASS** |
+| | `redis` | `database` | `outage` (90 s each) |
+| --- | --- | --- | --- |
+| Updates produced / acknowledged | 2,380 / 2,380 | 2,378 / 2,378 | 12,263 / 12,263 |
+| Acknowledged but missing from the document | 0 | 0 | 0 |
+| Clients behind at any checkpoint | 0 | 0 | 0 |
+| Clients that gave up | 0 | 0 | 0 |
+| Servers healthy afterwards | 1 of 1 (one killed on purpose) | 2 of 2 | 2 of 2 |
+| Reconnects / resync requests | 14 / 8 | 16 / 0 | 22 / 70 |
+| Result | **PASS** | **PASS** | **PASS** |
+
+In the `outage` run, clients converged 6.5 s after writing stopped following the Redis outage.
 
 ## What it found, and what changed
 
-Running this scenario found three defects that unit tests had not:
+Each of these was seen in a failing run, then fixed.
 
-1. **Silent divergence.** After the freeze and flush, readers on the frozen instance stayed permanently behind with open
-   sockets and no error. **Fix:** every open document broadcasts its latest persisted version every 10 s (`sync.check`);
-   a client that is behind on two consecutive checks sends `sync.request` and receives the state.
-2. **The first version of that fix didn't work.** Clients tracked the *highest* version seen, so later updates from a local
-   writer hid the gap (0 resync requests, still failing). Versions are gap-free, so clients now track the highest
-   *contiguous* version. A unit test covers exactly this case.
-3. **A reconnect storm.** After an outage, a client replayed its backlog as hundreds of separate messages, exceeded the
-   server's 40 messages/second limit, was disconnected with `4429`, reconnected, and replayed again forever. In that run
-   832 updates were never acknowledged and the client reconnected 5,283 times. **Fix:** the backlog is merged into one update
-   on replay (safe: Yjs updates merge and re-applying is a no-op), reconnect delay resets only after a connection stays up for
-   10 s, and a `4429` close forces a longer wait.
+From the `redis` scenario:
 
-## Limits of this test
+1. **Silent divergence.** After the freeze and flush, readers on the frozen instance stayed behind with open sockets and
+   no error. Every open document now broadcasts its latest persisted version every 10 s (`sync.check`); a client behind
+   on two consecutive checks asks for the state. With `--no-sync-check`, 8 clients were still behind after 35 s.
+2. **The first version of that fix didn't work.** Clients tracked the *highest* version seen, so later updates hid the
+   gap. They now track the highest *contiguous* version.
+3. **A reconnect storm.** A client replayed its backlog as hundreds of messages, hit the 40 messages/second limit, was
+   disconnected, and repeated. 832 updates were never acknowledged. The backlog is now merged on replay and the client
+   backs off.
 
-The harness also records the longest gap between acknowledgements, but that figure is not reported here: it includes idle time
-(writers stop while the run waits to converge, and a run that fails to converge waits longest), so it measures run length rather
-than stalls.
+From the `database` scenario:
 
-One machine, one fault timeline, one seed. It does not cover PostgreSQL failure, network partitions between the browser and
-API, multi-minute outages, or very large backlogs (a merged replay above the 2 MB message limit would be rejected). Resync
-latency is bounded by the 10 s check interval, so a client can be stale for up to about 20 s.
+4. **Both API servers crashed** when PostgreSQL was killed, and stayed down: the driver's `error` event had no listener.
+5. **People were told they were signed out.** A session that couldn't be *checked* closed the socket with the same code
+   as no session, so the editor gave up. It now closes with `1013` (try again), and the web app shows "Can't reach
+   SyncSpace" instead of redirecting to sign-in.
+6. **Failed saves were never retried.** The server sent an error and kept the socket open, leaving a hole that hid later
+   edits. A failed save now closes with `1013`, so the client reconnects and resends.
+
+Found by reading the code while extending these tests, and covered by unit tests rather than a fault run: a backlog
+larger than one message is now split, and a single edit too large to ever be accepted is reported as not saved.
+
+## Limits of these tests
+
+One machine and one timeline per scenario. Not covered: network partitions between servers, or between browser and
+API; a full disk; PostgreSQL failover to a replica; outages longer than 90 s. From reading the code, not from a test:
+while Redis is down, actions that notify other servers (such as removing a member) wait until it returns. Resync is
+bounded by the 10 s check interval, so a client can be stale for up to about 20 s.
