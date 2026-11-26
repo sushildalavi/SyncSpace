@@ -38,7 +38,7 @@ export default function WorkspaceSettingsPage() {
     if (workspace.data) reset({ name: workspace.data.name });
   }, [workspace.data, reset]);
 
-  if (workspace.isError) return <Page><QueryError error={workspace.error} what="this workspace" /></Page>;
+  if (workspace.isError) return <Page><QueryError heading="h1" error={workspace.error} what="this workspace" /></Page>;
 
   async function archive() {
     setDeleting(true);

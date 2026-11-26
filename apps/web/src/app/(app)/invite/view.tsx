@@ -1,5 +1,6 @@
 "use client";
 
+import { usePageTitle } from "@/lib/use-page-title";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { MailPlus } from "lucide-react";
 import Link from "next/link";
@@ -16,6 +17,7 @@ import { invalidateAccess } from "@/lib/queries";
 type Preview = { workspaceName: string; role: "owner" | "editor" | "viewer"; forEmail: string; matchesAccount: boolean };
 
 export function InviteView() {
+  usePageTitle("Invitation");
   const token = useSearchParams().get("token") ?? "";
   const router = useRouter();
   const client = useQueryClient();
@@ -39,7 +41,7 @@ export function InviteView() {
     <Page narrow>
       <div className="mx-auto mt-10 max-w-md rounded-xl border border-border bg-surface p-8 text-center shadow-sm">
         {!token ? (
-          <QueryError error={new Error("This invitation link is incomplete.")} />
+          <QueryError heading="h1" error={new Error("This invitation link is incomplete.")} />
         ) : preview.isLoading ? (
           <Skeleton className="mx-auto h-24 w-full" />
         ) : preview.isError ? (

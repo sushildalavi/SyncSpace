@@ -20,6 +20,7 @@ import { useSession } from "@/lib/auth-client";
 import { useCollab } from "@/lib/collab/use-collab";
 import { useRemoteUsers } from "@/lib/collab/use-remote-users";
 import { invalidateAccess, useDocument, useToggleFavorite } from "@/lib/queries";
+import { usePageTitle } from "@/lib/use-page-title";
 import { cn } from "@/lib/utils";
 
 export default function DocumentPage() {
@@ -34,6 +35,7 @@ export default function DocumentPage() {
   const remote = useRemoteUsers(provider);
   const [everSynced, setEverSynced] = useState(false);
   const lastRole = useRef<string | null>(null);
+  usePageTitle(meta.isError ? null : meta.data?.title);
 
   useEffect(() => {
     if (status.synced) setEverSynced(true);
@@ -62,7 +64,20 @@ export default function DocumentPage() {
   ) : null;
 
   // Losing access also makes the document request fail. Keep saying why, instead of a generic "not found".
-  if (meta.isError) return <Page narrow>{closedNotice ?? <QueryError error={meta.error} what="this document" />}</Page>;
+  if (meta.isError) {
+    return (
+      <Page narrow>
+        {closedNotice ? (
+          <>
+            <h1 className="sr-only">Document closed</h1>
+            {closedNotice}
+          </>
+        ) : (
+          <QueryError heading="h1" error={meta.error} what="this document" />
+        )}
+      </Page>
+    );
+  }
 
   const role = status.role ?? meta.data?.role ?? null;
   const readOnly = !roleCan(role, "document.write") || Boolean(status.closedReason);
@@ -71,6 +86,8 @@ export default function DocumentPage() {
 
   return (
     <div className="flex min-h-full flex-col">
+      {/* The visible title is an editable field, so the page's heading is provided separately. */}
+      <h1 className="sr-only">{meta.data?.title ?? "Document"}</h1>
       <header className={cn("sticky z-20 border-b border-border bg-background/90 backdrop-blur", stickyTop)}>
         <div className="mx-auto flex w-full max-w-3xl flex-wrap items-center gap-x-3 gap-y-1 px-5 py-2 sm:px-8">
           <div className="min-w-0 flex-1 basis-56">
@@ -95,7 +112,7 @@ export default function DocumentPage() {
                     <Link href={`/d/${documentId}/history`} aria-label="Version history"><History aria-hidden /></Link>
                   </Button>
                 </Tooltip>
-                {role ? <ShareDialog workspaceId={meta.data.workspaceId} documentId={documentId} role={role} /> : null}
+                {meta.data.workspaceRole ? <ShareDialog workspaceId={meta.data.workspaceId} documentId={documentId} role={meta.data.workspaceRole} /> : null}
               </>
             ) : null}
           </div>

@@ -3,21 +3,34 @@
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, type ReactNode } from "react";
 import { AppShell } from "@/components/app/app-shell";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useSession } from "@/lib/auth-client";
 
 /** Every page in this group requires a session. The API enforces it too, so this only drives navigation. */
 export default function AppLayout({ children }: { children: ReactNode }) {
-  const { data, isPending } = useSession();
+  const { data, isPending, error, refetch } = useSession();
+  // A failed check (server or database down) is not the same as being signed out.
+  const unreachable = !data && Boolean(error) && error!.status !== 401;
   const router = useRouter();
   const pathname = usePathname();
 
   useEffect(() => {
-    if (!isPending && !data) {
+    if (!isPending && !data && !unreachable) {
       const next = pathname === "/" ? "" : `?next=${encodeURIComponent(pathname + window.location.search)}`;
       router.replace(`/sign-in${next}`);
     }
-  }, [isPending, data, pathname, router]);
+  }, [isPending, data, unreachable, pathname, router]);
+
+  if (unreachable) {
+    return (
+      <main id="main" className="flex h-dvh flex-col items-center justify-center gap-3 px-6 text-center">
+        <h1 className="text-xl font-semibold">Can&apos;t reach SyncSpace</h1>
+        <p role="alert" className="max-w-sm text-sm text-muted-foreground">The server isn&apos;t answering. You haven&apos;t been signed out.</p>
+        <Button variant="primary" onClick={() => void refetch()}>Try again</Button>
+      </main>
+    );
+  }
 
   if (!data) {
     return (

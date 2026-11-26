@@ -34,17 +34,21 @@ export function SignInForm() {
     formState: { errors, isSubmitting }
   } = useForm<Values>({ resolver: zodResolver(Schema), defaultValues: { email: params.get("email") ?? "", password: "", rememberMe: true } });
 
-  const notice = params.get("reset") ? "Your password was updated. Sign in with the new one." : params.get("verified") ? "Email confirmed. You can sign in now." : null;
+  const notice = params.get("deleted") ? "Your account was deleted." : params.get("reset") ? "Your password was updated. Sign in with the new one." : params.get("verified") ? "Email confirmed. You can sign in now." : null;
 
   async function onSubmit(values: Values) {
     setFormError(null);
-    const { error } = await authClient.signIn.email({
+    const { data, error } = await authClient.signIn.email({
       email: values.email,
       password: values.password,
       rememberMe: values.rememberMe
     });
     if (error) {
       setFormError(authErrorMessage(error));
+      return;
+    }
+    if (data && "twoFactorRedirect" in data && data.twoFactorRedirect) {
+      router.push(`/two-factor${next !== "/" ? `?next=${encodeURIComponent(next)}` : ""}`);
       return;
     }
     await refetch(); // make sure the client's session state is fresh before entering protected pages

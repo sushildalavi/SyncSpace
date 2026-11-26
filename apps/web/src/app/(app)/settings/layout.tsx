@@ -15,9 +15,10 @@ const tabs = [
 
 export default function SettingsLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const current = tabs.find((tab) => (tab.href === "/settings" ? pathname === "/settings" : pathname.startsWith(tab.href)));
   return (
     <Page narrow>
-      <PageHeader title="Account settings" />
+      <PageHeader title="Account settings" documentTitle={current ? `${current.label} settings` : "Account settings"} />
       <nav aria-label="Settings" className="-mt-2 mb-8 flex gap-1 overflow-x-auto border-b border-border">
         {tabs.map((tab) => {
           const active = tab.href === "/settings" ? pathname === "/settings" : pathname.startsWith(tab.href);

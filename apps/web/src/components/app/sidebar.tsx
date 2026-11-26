@@ -33,7 +33,8 @@ function NavLink({ href, icon: Icon, children, badge, exact }: { href: string; i
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
-  return <h2 className="px-2.5 pb-1 pt-4 text-xs font-medium text-muted-foreground">{children}</h2>;
+  // not a heading: it would sit above the page's h1 in the outline
+  return <p className="px-2.5 pb-1 pt-4 text-xs font-medium text-muted-foreground">{children}</p>;
 }
 
 export function SidebarContent({ onCreateWorkspace }: { onCreateWorkspace: () => void }) {

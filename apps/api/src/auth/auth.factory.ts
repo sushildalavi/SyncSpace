@@ -2,7 +2,9 @@ import { Algorithm, hash, verify } from "@node-rs/argon2";
 import bcrypt from "bcryptjs";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { eq } from "drizzle-orm";
+import { APIError, createAuthMiddleware, getSessionFromCtx } from "better-auth/api";
+import { twoFactor } from "better-auth/plugins/two-factor";
+import { and, eq, isNull } from "drizzle-orm";
 import type { Db } from "../db/database.module.js";
 import * as schema from "../db/schema.js";
 import { actionEmail } from "../mail/templates.js";
@@ -32,6 +34,25 @@ export function createAuth({ db, env, sendMail, onSessionRevoked, audit }: AuthD
   const googleEnabled = Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET);
   const production = env.NODE_ENV === "production";
 
+  /** Binds document shares addressed to an email once someone has proved they own it. */
+  const claimShares = async (account: { id: string; email: string; emailVerified: boolean }) => {
+    if (account.emailVerified) {
+      await db
+        .update(schema.documentShare)
+        .set({ userId: account.id })
+        .where(and(eq(schema.documentShare.email, account.email.toLowerCase()), isNull(schema.documentShare.userId)));
+    }
+  };
+
+  /** A correct password with two-factor on creates a session that is discarded at once: that is not a sign-in. */
+  const awaitingSecondFactor = async (path: string | undefined, userId: string) => {
+    if (path !== "/sign-in/email") {
+      return false;
+    }
+    const [row] = await db.select({ enabled: schema.user.twoFactorEnabled }).from(schema.user).where(eq(schema.user.id, userId)).limit(1);
+    return Boolean(row?.enabled);
+  };
+
   return betterAuth({
     appName: "SyncSpace",
     baseURL: env.API_BASE_URL,
@@ -47,7 +68,8 @@ export function createAuth({ db, env, sendMail, onSessionRevoked, audit }: AuthD
         session: schema.session,
         account: schema.account,
         verification: schema.verification,
-        rateLimit: schema.rateLimit
+        rateLimit: schema.rateLimit,
+        twoFactor: schema.twoFactor
       }
     }),
     advanced: {
@@ -95,6 +117,35 @@ export function createAuth({ db, env, sendMail, onSessionRevoked, audit }: AuthD
         await sendMail({ to: user.email, subject: "Reset your SyncSpace password", ...body });
       }
     },
+    // Applies to password sign-in. Google sign-in relies on the protections of the Google account.
+    plugins: [twoFactor({ issuer: "SyncSpace" })],
+    hooks: {
+      before: createAuthMiddleware(async (ctx) => {
+        // Two-factor: an unconfirmed account can be signed in by its confirmation link, which would skip the code.
+        // Email change: only a confirmed address can approve a move, so a stolen session alone can't take an account.
+        if (ctx.path === "/two-factor/enable" || ctx.path === "/change-email") {
+          const current = await getSessionFromCtx(ctx);
+          if (current && !current.user.emailVerified) {
+            throw new APIError("FORBIDDEN", { message: "Confirm your current email address first" });
+          }
+        }
+      })
+    },
+    user: {
+      changeEmail: {
+        enabled: true,
+        // The current address approves first, then the new one is verified. A stolen session alone can't move an account.
+        sendChangeEmailConfirmation: async ({ user, newEmail, url }) => {
+          const body = actionEmail({
+            heading: "Approve your new email address",
+            body: `Someone asked to change the email on your SyncSpace account to ${newEmail}. If this wasn't you, ignore this message and change your password.`,
+            actionLabel: "Approve change",
+            url
+          });
+          await sendMail({ to: user.email, subject: "Approve your SyncSpace email change", ...body });
+        }
+      }
+    },
     emailVerification: {
       sendOnSignUp: true,
       sendOnSignIn: true,
@@ -138,6 +189,18 @@ export function createAuth({ db, env, sendMail, onSessionRevoked, audit }: AuthD
       }
     },
     databaseHooks: {
+      user: {
+        create: { after: async (account) => claimShares(account) },
+        update: {
+          after: async (account, ctx) => {
+            await claimShares(account);
+            const event = securityEvent(ctx?.path, account, ctx?.query?.token);
+            if (event) {
+              audit?.({ type: event, userId: account.id });
+            }
+          }
+        }
+      },
       account: {
         // We only need the identity, not the ability to call Google on the user's behalf.
         create: {
@@ -159,19 +222,43 @@ export function createAuth({ db, env, sendMail, onSessionRevoked, audit }: AuthD
       },
       session: {
         create: {
-          after: async (session) => {
-            audit?.({ type: "auth.signed_in", userId: session.userId, ip: session.ipAddress ?? null, metadata: { userAgent: session.userAgent ?? null } });
+          after: async (session, ctx) => {
+            const challenged = await awaitingSecondFactor(ctx?.path, session.userId);
+            audit?.({
+              type: challenged ? "auth.two_factor_challenged" : "auth.signed_in",
+              userId: session.userId,
+              ip: session.ipAddress ?? null,
+              metadata: { userAgent: session.userAgent ?? null }
+            });
           }
         },
         delete: {
-          after: async (session) => {
+          after: async (session, ctx) => {
             onSessionRevoked?.({ id: session.id, userId: session.userId });
-            audit?.({ type: "auth.session_ended", userId: session.userId });
+            if (!(await awaitingSecondFactor(ctx?.path, session.userId))) {
+              audit?.({ type: "auth.session_ended", userId: session.userId });
+            }
           }
         }
       }
     }
   });
+}
+
+/** Which account change, if any, a user update represents, judged by the request that caused it. */
+function securityEvent(path: string | undefined, account: { email: string; twoFactorEnabled?: unknown }, token: unknown): string | null {
+  if (path === "/two-factor/verify-totp" && account.twoFactorEnabled) {
+    return "auth.two_factor_enabled";
+  }
+  if (path === "/two-factor/disable") {
+    return "auth.two_factor_disabled";
+  }
+  if (path === "/verify-email" && typeof token === "string") {
+    // Better Auth has already checked the signature by the time it updates the user.
+    const claims = JSON.parse(Buffer.from(token.split(".")[1] ?? "", "base64url").toString() || "{}") as { updateTo?: string };
+    return claims.updateTo === account.email ? "auth.email_changed" : null;
+  }
+  return null;
 }
 
 function stripProviderTokens<T extends Record<string, unknown>>(account: T): T {

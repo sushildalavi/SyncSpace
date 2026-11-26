@@ -35,6 +35,7 @@ export const user = pgTable("user", {
   email: text("email").notNull().unique(),
   emailVerified: boolean("email_verified").notNull().default(false),
   image: text("image"),
+  twoFactorEnabled: boolean("two_factor_enabled").notNull().default(false),
   createdAt: createdAt(),
   updatedAt: updatedAt()
 });
@@ -93,6 +94,23 @@ export const verification = pgTable(
     updatedAt: updatedAt()
   },
   (table) => [index("verification_identifier_idx").on(table.identifier)]
+);
+
+/** TOTP secret and backup codes (both stored encrypted by Better Auth). */
+export const twoFactor = pgTable(
+  "two_factor",
+  {
+    id: text("id").primaryKey(),
+    secret: text("secret").notNull(),
+    backupCodes: text("backup_codes").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    verified: boolean("verified").notNull().default(true),
+    failedVerificationCount: integer("failed_verification_count").notNull().default(0),
+    lockedUntil: timestamp("locked_until", { withTimezone: true })
+  },
+  (table) => [index("two_factor_user_idx").on(table.userId), index("two_factor_secret_idx").on(table.secret)]
 );
 
 /** Better Auth's database-backed rate limiter. */
@@ -290,6 +308,33 @@ export const documentView = pgTable(
   (table) => [
     primaryKey({ columns: [table.userId, table.documentId] }),
     index("document_view_recent_idx").on(table.userId, table.viewedAt.desc())
+  ]
+);
+
+export const shareRole = pgEnum("share_role", ["editor", "viewer"]);
+
+/**
+ * Access to a single document for someone who need not belong to its workspace. A share is addressed to an email.
+ * It is bound to a user once that user has proved they own the address, so it survives a later email change.
+ */
+export const documentShare = pgTable(
+  "document_share",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    documentId: uuid("document_id")
+      .notNull()
+      .references(() => document.id, { onDelete: "cascade" }),
+    email: text("email").notNull(),
+    userId: text("user_id").references(() => user.id, { onDelete: "cascade" }),
+    role: shareRole("role").notNull(),
+    sharedBy: text("shared_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt()
+  },
+  (table) => [
+    uniqueIndex("document_share_uq").on(table.documentId, table.email),
+    index("document_share_user_idx").on(table.userId),
+    index("document_share_email_idx").on(table.email)
   ]
 );
 

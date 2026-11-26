@@ -18,6 +18,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { CollabEditor } from "@/components/editor/collab-editor";
 import { api } from "@/lib/api";
 import { invalidateAccess, useDocument, type HistoryEntry } from "@/lib/queries";
+import { usePageTitle } from "@/lib/use-page-title";
 import { cn, timeAgo } from "@/lib/utils";
 
 type HistoryResponse = { currentVersion: number; updates: HistoryEntry[]; snapshots: Array<{ version: number; byteSize: number }> };
@@ -25,6 +26,7 @@ type HistoryResponse = { currentVersion: number; updates: HistoryEntry[]; snapsh
 export default function HistoryPage() {
   const { documentId } = useParams<{ documentId: string }>();
   const meta = useDocument(documentId);
+  usePageTitle(meta.data && !meta.isError ? `Version history · ${meta.data.title}` : null);
   const history = useQuery({ queryKey: ["history", documentId], queryFn: () => api<HistoryResponse>(`/documents/${documentId}/history`) });
   const [selected, setSelected] = useState<number | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -65,7 +67,7 @@ export default function HistoryPage() {
     }
   }
 
-  if (meta.isError) return <Page><QueryError error={meta.error} what="this document" /></Page>;
+  if (meta.isError) return <Page><QueryError heading="h1" error={meta.error} what="this document" /></Page>;
 
   return (
     <Page>

@@ -33,7 +33,7 @@ export default function WorkspacePage() {
     }
   }
 
-  if (workspace.isError) return <Page><QueryError error={workspace.error} what="this workspace" /></Page>;
+  if (workspace.isError) return <Page><QueryError heading="h1" error={workspace.error} what="this workspace" /></Page>;
 
   const visible = documents.data?.filter((doc) => doc.title.toLowerCase().includes(filter.trim().toLowerCase())) ?? [];
 

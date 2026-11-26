@@ -8,7 +8,7 @@ export function PresenceAvatars({ users, self }: { users: RemoteUser[]; self: { 
   const shown = users.slice(0, 4);
   const extra = users.length - shown.length;
   return (
-    <ul aria-label={`${users.length + 1} people here`} className="flex items-center gap-1.5" data-testid="presence">
+    <ul aria-label={users.length === 0 ? "1 person here" : `${users.length + 1} people here`} className="flex items-center gap-1.5" data-testid="presence">
       <li>
         <Tooltip label="You"><span className="inline-flex"><Avatar name={self.name} src={self.image ?? null} size="sm" color={self.color} /></span></Tooltip>
       </li>

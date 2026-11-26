@@ -8,6 +8,7 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
+import { TwoFactorSettings } from "@/components/app/two-factor-settings";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field, FormError } from "@/components/ui/field";
@@ -40,6 +41,14 @@ const eventLabels: Record<string, string> = {
   "auth.password_reset": "Password reset",
   "auth.provider_linked": "Provider connected",
   "auth.provider_unlinked": "Provider disconnected",
+  "auth.two_factor_challenged": "Password accepted, waiting for a code",
+  "auth.two_factor_enabled": "Two-factor sign-in turned on",
+  "auth.two_factor_disabled": "Two-factor sign-in turned off",
+  "auth.email_changed": "Email address changed",
+  "account.delete_denied": "Account deletion refused",
+  "document.shared": "Shared a document",
+  "document.unshared": "Removed a share",
+  "document.restored": "Restored a document version",
   "workspace.created": "Created a workspace",
   "member.role_changed": "Changed a member's role",
   "member.removed": "Removed a member",
@@ -146,13 +155,15 @@ export default function SecuritySettings() {
         )}
       </section>
 
+      {accounts.isLoading ? null : <TwoFactorSettings hasPassword={Boolean(hasPassword)} />}
+
       <section aria-labelledby="sessions-heading" className="space-y-4">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h2 id="sessions-heading" className="text-lg font-semibold">Active sessions</h2>
             <p className="text-sm text-muted-foreground">Devices currently signed in to your account. Signing one out also closes any documents it has open.</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button size="sm" onClick={revokeOthers} loading={revoking === "others"} disabled={(sessions.data?.length ?? 0) < 2}>Sign out other devices</Button>
             <Button size="sm" variant="ghost" onClick={revokeAll} loading={revoking === "all"}>Sign out everywhere</Button>
           </div>

@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import { WebSocket, WebSocketServer } from "ws";
@@ -8,6 +8,7 @@ import { CollaborationService } from "../src/collaboration/collaboration.service
 import type { Db } from "../src/db/database.module.js";
 import { session as sessionTable } from "../src/db/schema.js";
 import { DocumentsService } from "../src/documents/documents.service.js";
+import { SharesService } from "../src/documents/shares.service.js";
 import type { BusEnvelope, BusEvent, RealtimeBus } from "../src/realtime/realtime-bus.service.js";
 import { WorkspacesService } from "../src/workspaces/workspaces.service.js";
 import type { AuthenticatedUser } from "../src/auth/session.guard.js";
@@ -56,9 +57,11 @@ let closeDb: () => Promise<void>;
 let hub: Hub;
 let documents: DocumentsService;
 let workspaces: WorkspacesService;
+let shares: SharesService;
 const instances: Instance[] = [];
 const sessions = new Map<string, AuthenticatedUser>();
 const sockets: WebSocket[] = [];
+const outage = { session: false };
 
 beforeAll(async () => {
   ({ db, close: closeDb } = await createTestDb());
@@ -67,10 +70,12 @@ beforeAll(async () => {
   const hubBus = new FakeBus(hub) as unknown as RealtimeBus;
   documents = new DocumentsService(db, ctx.access, ctx.audit, hubBus);
   workspaces = new WorkspacesService(db, ctx.access, ctx.audit, hubBus, ctx.mailer, { WEB_ORIGIN: ORIGIN });
+  shares = new SharesService(db, ctx.access, ctx.audit, hubBus, ctx.mailer, { WEB_ORIGIN: ORIGIN });
 
   const auth = {
     api: {
       getSession: async ({ headers }: { headers: Headers }) => {
+        if (outage.session) throw new Error("database unavailable");
         const sid = /sid=([^;]+)/.exec(headers.get("cookie") ?? "")?.[1];
         const user = sid ? sessions.get(sid) : undefined;
         return user ? { session: { id: sid }, user } : null;
@@ -339,5 +344,71 @@ describe("self-healing sync", () => {
     await instances[0]!.service["bus"].publish({ type: "document.update", documentId: doc.id, connectionId: "server", updateId: "restore-x", version: 7, payload: update("restored"), actorId: owner.id });
     expect((await local.waitFor("document.update")).payload.version).toBe(7);
     expect((await other.waitFor("document.update")).payload.version).toBe(7);
+  });
+});
+
+describe("single-document shares on live sockets", () => {
+  it("admits a guest to the shared document only, and applies role changes and removal immediately", async () => {
+    const { doc, owner, ws } = await fixture();
+    const other = await documents.create(ws.id, "Not shared", owner.id);
+    const guest = await createUser(db);
+    const share = await shares.share(doc.id, owner, guest.email, "editor");
+    const sid = await signIn(guest);
+    expect(await connect(instances[0]!, other.id, sid).closed).toBe(CLOSE_CODES.notFound);
+
+    const client = connect(instances[1]!, doc.id, sid);
+    await client.waitFor("document.snapshot");
+    client.send("document.update", body(doc.id, update("from the guest")));
+    await client.waitFor("document.ack");
+
+    await shares.share(doc.id, owner, guest.email, "viewer");
+    expect((await client.waitFor("access.updated")).payload.role).toBe("viewer");
+    client.send("document.update", body(doc.id, update("too late")));
+    expect((await client.waitFor("document.rejected")).payload.reason).toBe("read_only");
+
+    await shares.remove(doc.id, share.id, owner.id);
+    expect(await client.closed).toBe(CLOSE_CODES.accessRevoked);
+  });
+
+  it("keeps a removed member connected to a document that is still shared with them", async () => {
+    const { doc, owner, ws, add } = await fixture();
+    const member = await add("editor");
+    await shares.share(doc.id, owner, member.email, "viewer");
+    const client = connect(instances[0]!, doc.id, await signIn(member));
+    await client.waitFor("document.snapshot");
+    await workspaces.removeMember(ws.id, owner, member.id);
+    expect((await client.waitFor("access.updated")).payload.role).toBe("viewer");
+    expect(client.socket.readyState).toBe(WebSocket.OPEN);
+  });
+});
+
+describe("database trouble", () => {
+  it("asks the client to retry, instead of saying it is signed out, when the session can't be checked", async () => {
+    const { doc, owner } = await fixture();
+    const sid = await signIn(owner);
+    outage.session = true;
+    try {
+      expect(await connect(instances[0]!, doc.id, sid).closed).toBe(CLOSE_CODES.tryAgain);
+    } finally {
+      outage.session = false;
+    }
+  });
+
+  it("closes for a retry when an update can't be saved, and saves it when sent again", async () => {
+    const { doc, owner } = await fixture();
+    const sid = await signIn(owner);
+    const client = connect(instances[0]!, doc.id, sid);
+    await client.waitFor("document.snapshot");
+    const spy = vi.spyOn(documents, "persistUpdate").mockRejectedValueOnce(new Error("connection terminated"));
+    const message = body(doc.id, update("keep me"));
+    client.send("document.update", message);
+    expect(await client.closed).toBe(CLOSE_CODES.tryAgain);
+    expect(client.messages.some((m) => m.type === "document.ack")).toBe(false);
+    spy.mockRestore();
+
+    const again = connect(instances[0]!, doc.id, sid);
+    await again.waitFor("document.snapshot");
+    again.send("document.update", message);
+    expect((await again.waitFor("document.ack")).payload.version).toBe(1);
   });
 });

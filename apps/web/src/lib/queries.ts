@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { Permission, WorkspaceRole } from "@syncspace/contracts";
+import type { Permission, ShareRole, WorkspaceRole } from "@syncspace/contracts";
 import { api } from "./api";
 
 export type Workspace = {
@@ -20,6 +20,8 @@ export type DocumentDetail = {
   title: string;
   role: WorkspaceRole;
   permissions: Permission[];
+  /** Null when access comes only from a direct share. */
+  workspaceRole: WorkspaceRole | null;
   isFavorite: boolean;
   currentVersion: number;
   updatedAt: string;
@@ -28,6 +30,7 @@ export type DocLink = { id: string; workspaceId: string; workspaceName: string; 
 export type Member = { userId: string; name: string; email: string; image: string | null; role: WorkspaceRole; joinedAt: string };
 export type Invitation = { id: string; email: string; role: WorkspaceRole; expiresAt: string; createdAt: string };
 export type MyInvitation = { id: string; role: WorkspaceRole; expiresAt: string; workspaceId: string; workspaceName: string; invitedByName: string };
+export type DocumentShare = { id: string; email: string; role: ShareRole; createdAt: string };
 export type PublicConfig = { googleEnabled: boolean; requireEmailVerification: boolean };
 export type HistoryEntry = { version: number; actorId: string; actorName: string; createdAt: string };
 export type Integration = { id: string; provider: "slack" | "teams"; name: string; enabled: boolean; webhookHint: string };
@@ -43,6 +46,8 @@ export const keys = {
   myInvitations: ["my-invitations"] as const,
   recent: ["recent"] as const,
   favorites: ["favorites"] as const,
+  shared: ["shared-with-me"] as const,
+  shares: (documentId: string) => ["shares", documentId] as const,
   config: ["config"] as const
 };
 
@@ -58,6 +63,9 @@ export const useInvitations = (id: string, enabled: boolean) =>
 export const useMyInvitations = () => useQuery({ queryKey: keys.myInvitations, queryFn: () => api<MyInvitation[]>("/invitations") });
 export const useRecent = () => useQuery({ queryKey: keys.recent, queryFn: () => api<DocLink[]>("/documents/recent") });
 export const useFavorites = () => useQuery({ queryKey: keys.favorites, queryFn: () => api<DocLink[]>("/documents/favorites") });
+export const useSharedWithMe = () => useQuery({ queryKey: keys.shared, queryFn: () => api<DocLink[]>("/documents/shared") });
+export const useShares = (documentId: string, enabled: boolean) =>
+  useQuery({ queryKey: keys.shares(documentId), queryFn: () => api<DocumentShare[]>(`/documents/${documentId}/shares`), enabled });
 export const useSearch = (q: string) =>
   useQuery({ queryKey: ["search", q], queryFn: () => api<DocLink[]>(`/search?q=${encodeURIComponent(q)}`), enabled: q.trim().length > 0, staleTime: 15_000 });
 
@@ -102,4 +110,5 @@ export function invalidateAccess(client: ReturnType<typeof useQueryClient>, work
   void client.invalidateQueries({ queryKey: ["document"] });
   void client.invalidateQueries({ queryKey: keys.recent });
   void client.invalidateQueries({ queryKey: keys.favorites });
+  void client.invalidateQueries({ queryKey: keys.shared });
 }

@@ -16,7 +16,8 @@ export function useCurrentWorkspaceId(): string | null {
   if (params.workspaceId) return params.workspaceId;
   if (params.documentId && pathname.startsWith("/d/")) {
     const doc = client.getQueryData<DocumentDetail>(keys.document(params.documentId));
-    if (doc) return doc.workspaceId;
+    // a document shared from someone else's workspace leaves the current one unchanged
+    if (doc && data?.some((w) => w.id === doc.workspaceId)) return doc.workspaceId;
   }
   if (last && data?.some((w) => w.id === last)) return last;
   return data?.[0]?.id ?? null;

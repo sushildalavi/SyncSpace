@@ -4,12 +4,14 @@ import { Check, Link2, Share2 } from "lucide-react";
 import { useState } from "react";
 import { roleCan, type WorkspaceRole } from "@syncspace/contracts";
 import { MembersPanel } from "@/components/app/members-panel";
+import { SharesPanel } from "./shares-panel";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 
 export function ShareDialog({ workspaceId, documentId, role }: { workspaceId: string; documentId: string; role: WorkspaceRole }) {
   const [copied, setCopied] = useState(false);
   const canInvite = roleCan(role, "member.manage");
+  const canShare = roleCan(role, "document.share");
 
   async function copy() {
     await navigator.clipboard.writeText(`${window.location.origin}/d/${documentId}`);
@@ -28,8 +30,7 @@ export function ShareDialog({ workspaceId, documentId, role }: { workspaceId: st
         <DialogHeader>
           <DialogTitle>Share this document</DialogTitle>
           <DialogDescription>
-            Access is granted per workspace: everyone below can open every document in it.{" "}
-            {canInvite ? "Invite people or change roles here." : "Only owners can change who has access."}
+            {canInvite ? "Share just this document, or invite someone to the whole workspace." : "Only owners can change who has access."}
           </DialogDescription>
         </DialogHeader>
         <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/50 p-3">
@@ -39,7 +40,14 @@ export function ShareDialog({ workspaceId, documentId, role }: { workspaceId: st
             {copied ? <Check aria-hidden /> : null} {copied ? "Copied" : "Copy link"}
           </Button>
         </div>
-        <MembersPanel workspaceId={workspaceId} />
+        {canShare ? <SharesPanel documentId={documentId} /> : null}
+        <section aria-labelledby="members-heading" className="space-y-3">
+          <div>
+            <h3 id="members-heading" className="font-semibold">Everyone in the workspace</h3>
+            <p className="text-sm text-muted-foreground">Members can open every document in it.</p>
+          </div>
+          <MembersPanel workspaceId={workspaceId} />
+        </section>
       </DialogContent>
     </Dialog>
   );

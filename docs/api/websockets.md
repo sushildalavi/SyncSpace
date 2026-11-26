@@ -29,4 +29,5 @@ Authentication is the session **cookie** (sent automatically; credentials in the
 ## Close codes
 
 `4401` not signed in · `4403` origin not allowed · `4404` no such document / no access · `4410` access removed ·
-`4411` session revoked · `4429` rate limited. Any other close is treated by the client as transient and retried.
+`4411` session revoked · `4429` rate limited · `1013` the server can't save or check right now, try again.
+Any close not starting with `44`, and also `4429`, is treated by the client as transient: it reconnects and resends.

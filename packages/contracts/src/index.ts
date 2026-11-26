@@ -18,7 +18,8 @@ export const PERMISSIONS = [
   "document.read",
   "document.create",
   "document.write",
-  "document.delete"
+  "document.delete",
+  "document.share"
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
@@ -37,6 +38,33 @@ export const ROLE_PERMISSIONS: Record<WorkspaceRole, readonly Permission[]> = {
 
 export function roleCan(role: WorkspaceRole | null | undefined, permission: Permission): boolean {
   return role ? ROLE_PERMISSIONS[role].includes(permission) : false;
+}
+
+/* ---------------- single-document sharing ---------------- */
+
+export const ShareRoleSchema = z.enum(["editor", "viewer"]);
+export type ShareRole = z.infer<typeof ShareRoleSchema>;
+
+/** What a share grants. Deliberately narrower than the workspace role of the same name: no delete, create or share. */
+export const SHARE_PERMISSIONS: Record<ShareRole, readonly Permission[]> = {
+  editor: ["document.read", "document.write"],
+  viewer: ["document.read"]
+};
+
+const ROLE_RANK: Record<WorkspaceRole, number> = { viewer: 1, editor: 2, owner: 3 };
+
+/** Combines workspace membership with a direct share. The stronger of the two wins; permissions are the union. */
+export function documentAccess(workspaceRole: WorkspaceRole | null, shareRole: ShareRole | null): { role: WorkspaceRole; permissions: Permission[] } | null {
+  const candidates = [workspaceRole, shareRole].filter((value): value is WorkspaceRole => value !== null);
+  if (candidates.length === 0) {
+    return null;
+  }
+  const role = candidates.reduce((best, next) => (ROLE_RANK[next] > ROLE_RANK[best] ? next : best));
+  const granted = new Set<Permission>([
+    ...(workspaceRole ? ROLE_PERMISSIONS[workspaceRole] : []),
+    ...(shareRole ? SHARE_PERMISSIONS[shareRole] : [])
+  ]);
+  return { role, permissions: PERMISSIONS.filter((permission) => granted.has(permission)) };
 }
 
 /* ------------------------------------------------------------------ */
@@ -58,6 +86,19 @@ export const MemberRoleUpdateSchema = z.object({ role: WorkspaceRoleSchema });
 
 export const DocumentCreateSchema = z.object({ title: z.string().trim().min(1).max(160) });
 export type DocumentCreateInput = z.infer<typeof DocumentCreateSchema>;
+
+export const DocumentShareSchema = z.object({
+  email: z.string().trim().toLowerCase().email().max(254),
+  role: ShareRoleSchema
+});
+export type DocumentShareInput = z.infer<typeof DocumentShareSchema>;
+
+export const AccountDeleteSchema = z.object({
+  /** The account's own address, typed again to confirm intent. */
+  confirmEmail: z.string().trim().toLowerCase().email().max(254),
+  password: z.string().min(1).max(128).optional()
+});
+export type AccountDeleteInput = z.infer<typeof AccountDeleteSchema>;
 
 export const DocumentRestoreSchema = z.object({ version: z.number().int().min(1) });
 
@@ -86,6 +127,7 @@ export const CollaborationUpdateSchema = z.object({
   documentId: z.string().min(1),
   updateId: z.string().min(1).max(64),
   /** base64 encoded Yjs incremental update */
+  /* at most COLLAB_LIMITS.maxUpdateChars, which is declared below */
   payload: z.string().min(1).max(1_400_000)
 });
 export type CollaborationUpdateInput = z.infer<typeof CollaborationUpdateSchema>;
@@ -108,6 +150,8 @@ export type PresenceState = {
 
 /** Application close codes sent on the collaboration socket. */
 export const CLOSE_CODES = {
+  /** The server couldn't do its job just now (for example the database is down). Clients reconnect and resend. */
+  tryAgain: 1013,
   unauthenticated: 4401,
   forbidden: 4403,
   notFound: 4404,
@@ -116,7 +160,7 @@ export const CLOSE_CODES = {
   rateLimited: 4429
 } as const;
 
-export const COLLAB_LIMITS = { maxMessageBytes: 2_000_000, maxMessagesPerSecond: 40 } as const;
+export const COLLAB_LIMITS = { maxMessageBytes: 2_000_000, maxMessagesPerSecond: 40, maxUpdateChars: 1_400_000 } as const;
 
 /** Deterministic, accessible presence colors. */
 export const PRESENCE_COLORS = [
