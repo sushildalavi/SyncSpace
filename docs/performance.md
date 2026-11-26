@@ -34,7 +34,7 @@ Each run sends 2,000 or 4,000 updates. The 280-client runs handled about 540 upd
 
 Both configurations were run three times each again later the same day, with Node 22, while unrelated builds and tests
 were running on the machine. Every update was acknowledged and no client diverged, but latency was far higher:
-median acknowledgement 11–16 ms at 100 clients and 37–82 ms at 280, with p95 as high as 552 ms. Latency in this setup
+median acknowledgement 11–16 ms at 100 clients and 36–82 ms at 280, with p95 as high as 552 ms. Latency in this setup
 depends heavily on what else the host is doing.
 
 An earlier before-and-after comparison around the addition of single-document sharing (commits `d742287` and `4d1572e`)

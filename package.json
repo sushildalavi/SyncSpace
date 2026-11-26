@@ -1,13 +1,12 @@
 {
   "name": "syncspace",
-  "description": "Real-time collaborative document editor with offline editing, role-based sharing and two-factor sign-in.",
+  "description": "Real-time collaborative document editor with queued offline edits, role-based sharing and two-factor sign-in.",
   "keywords": [
     "collaboration",
     "real-time",
     "collaborative-editing",
     "crdt",
     "yjs",
-    "offline-first",
     "nextjs",
     "nestjs",
     "postgresql",

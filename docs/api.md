@@ -7,12 +7,14 @@ Cookie session required unless marked public. State-changing requests must carry
 last-owner violations `409`. Request body schemas are in
 [`packages/contracts`](../packages/contracts/src/index.ts).
 
-`/api/auth/*` is rate limited per client address: 100 requests a minute, with a limit of 3 per 10 seconds on sign-in,
-sign-up, password change and email change. Other routes have no general rate limit.
+`/api/auth/*` is rate limited per client address and route: 100 requests a minute by default, 3 per 10 seconds on
+sign-in, sign-up, password change, email change and `/two-factor/*`, and 3 per 60 seconds on password reset and
+verification email requests. Account deletion and collaboration socket messages have their own limits. Other REST
+routes have none.
 
 | Method & path | Role | Notes |
 | --- | --- | --- |
-| `GET /health`, `GET /config` | public | `{ ok, postgres, redis }`, always `200`, so check `ok`; `{ googleEnabled, requireEmailVerification }` |
+| `GET /health`, `GET /config` | public | `{ ok, service, postgres, redis }`, always `200`, so check `ok`; `{ googleEnabled, requireEmailVerification }` |
 | `GET /` | public | redirects to the web app |
 | `/api/auth/*` | public/session | Better Auth: sign-up/in/out, verification, reset, sessions, accounts, Google, email change, two-factor |
 | `GET /me`, `GET /me/security-events` | any | |
