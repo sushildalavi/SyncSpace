@@ -1,5 +1,5 @@
 import * as Y from "yjs";
-import { CLOSE_CODES, type WorkspaceRole } from "@syncspace/contracts";
+import { CLOSE_CODES, COLLAB_LIMITS, type WorkspaceRole } from "@syncspace/contracts";
 import { OfflineStore, type PendingUpdate } from "./offline-store";
 import { numericId, RemoteAwareness } from "./remote-awareness";
 
@@ -162,6 +162,13 @@ export class CollabProvider {
   private onPageHide = (): void => this.flushNow();
 
   private transmit(entry: PendingUpdate): void {
+    if (entry.payload.length > COLLAB_LIMITS.maxUpdateChars) {
+      // A single edit this big (a huge paste) can never be accepted. Say so, rather than showing "Saving…" forever.
+      this.pending.delete(entry.updateId);
+      void this.store.remove(entry.updateId);
+      this.patch({ pending: this.unsaved(), editsRejected: true });
+      return;
+    }
     if (this.socket?.readyState === WebSocket.OPEN && this.status.synced && this.status.role !== "viewer") {
       this.socket.send(JSON.stringify({ type: "document.update", payload: { documentId: this.options.documentId, updateId: entry.updateId, payload: entry.payload } }));
     }
@@ -170,26 +177,37 @@ export class CollabProvider {
   /**
    * Re-sends everything the server hasn't acknowledged. After a long outage the backlog can be hundreds of updates;
    * sent one by one it would exceed the server's message rate limit, get the socket closed, and loop. Yjs updates merge,
-   * and applying an update twice is a no-op, so the whole backlog goes up as ONE update even if some of it had in fact
-   * been persisted before the connection dropped.
+   * and applying an update twice is a no-op, so the backlog goes up merged, even if some of it had in fact been
+   * persisted before the connection dropped. A backlog too large for one message is split into as few as will fit.
    */
   private replayPending(): void {
-    if (this.pending.size > 1) {
-      const entries = [...this.pending.values()];
+    const groups: PendingUpdate[][] = [];
+    let size = 0;
+    for (const entry of this.pending.values()) {
+      // merging never makes updates meaningfully larger than their sum
+      if (groups.length === 0 || size + entry.payload.length > COLLAB_LIMITS.maxUpdateChars) {
+        groups.push([]);
+        size = 0;
+      }
+      groups.at(-1)!.push(entry);
+      size += entry.payload.length;
+    }
+    for (const group of groups) {
+      if (group.length < 2) continue;
       const merged: PendingUpdate = {
         updateId: crypto.randomUUID(),
-        payload: toBase64(Y.mergeUpdates(entries.map((entry) => fromBase64(entry.payload)))),
-        createdAt: entries[0]!.createdAt
+        payload: toBase64(Y.mergeUpdates(group.map((entry) => fromBase64(entry.payload)))),
+        createdAt: group[0]!.createdAt
       };
-      for (const entry of entries) {
+      for (const entry of group) {
         this.pending.delete(entry.updateId);
         void this.store.remove(entry.updateId);
       }
       this.pending.set(merged.updateId, merged);
       void this.store.put(merged);
-      this.patch({ pending: this.unsaved() });
     }
-    for (const entry of this.pending.values()) this.transmit(entry);
+    this.patch({ pending: this.unsaved() });
+    for (const entry of [...this.pending.values()].sort((a, b) => a.createdAt - b.createdAt)) this.transmit(entry);
   }
 
   private async restorePending(): Promise<void> {

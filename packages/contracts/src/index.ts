@@ -127,6 +127,7 @@ export const CollaborationUpdateSchema = z.object({
   documentId: z.string().min(1),
   updateId: z.string().min(1).max(64),
   /** base64 encoded Yjs incremental update */
+  /* at most COLLAB_LIMITS.maxUpdateChars, which is declared below */
   payload: z.string().min(1).max(1_400_000)
 });
 export type CollaborationUpdateInput = z.infer<typeof CollaborationUpdateSchema>;
@@ -149,6 +150,8 @@ export type PresenceState = {
 
 /** Application close codes sent on the collaboration socket. */
 export const CLOSE_CODES = {
+  /** The server couldn't do its job just now (for example the database is down). Clients reconnect and resend. */
+  tryAgain: 1013,
   unauthenticated: 4401,
   forbidden: 4403,
   notFound: 4404,
@@ -157,7 +160,7 @@ export const CLOSE_CODES = {
   rateLimited: 4429
 } as const;
 
-export const COLLAB_LIMITS = { maxMessageBytes: 2_000_000, maxMessagesPerSecond: 40 } as const;
+export const COLLAB_LIMITS = { maxMessageBytes: 2_000_000, maxMessagesPerSecond: 40, maxUpdateChars: 1_400_000 } as const;
 
 /** Deterministic, accessible presence colors. */
 export const PRESENCE_COLORS = [

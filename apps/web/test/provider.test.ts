@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
-import { CLOSE_CODES } from "@syncspace/contracts";
+import { CLOSE_CODES, COLLAB_LIMITS } from "@syncspace/contracts";
 import { CollabProvider } from "../src/lib/collab/provider";
 
 class FakeSocket {
@@ -129,6 +129,42 @@ describe("CollabProvider", () => {
     socket.receive({ type: "sync.check", payload: { documentId: "d", version: 8 } });
     socket.receive({ type: "sync.check", payload: { documentId: "d", version: 8 } });
     expect(socket.sent.filter((m) => m.type === "sync.request")).toHaveLength(1);
+    provider.destroy();
+  });
+
+  it("splits a backlog that is too large for one message, losing nothing", async () => {
+    const { doc, provider } = makeProvider();
+    const first = await nextSocket(1);
+    first.onopen?.();
+    first.receive(emptySnapshot());
+    for (const letter of ["a", "b", "c"]) {
+      doc.getText("body").insert(doc.getText("body").length, letter.repeat(600_000)); // about 800 kB each as base64
+      await new Promise((resolve) => setTimeout(resolve, 70));
+    }
+    first.drop(1006);
+    const second = await nextSocket(2);
+    second.onopen?.();
+    second.receive(emptySnapshot());
+    const sent = updatesSent(second);
+    expect(sent.length).toBeGreaterThan(1);
+    const rebuilt = new Y.Doc();
+    for (const message of sent) {
+      expect(String(message.payload.payload).length).toBeLessThanOrEqual(COLLAB_LIMITS.maxUpdateChars);
+      Y.applyUpdate(rebuilt, Buffer.from(String(message.payload.payload), "base64"));
+    }
+    expect(rebuilt.getText("body").length).toBe(1_800_000);
+    provider.destroy();
+  });
+
+  it("reports a single oversized edit as not saved instead of waiting forever", async () => {
+    const { doc, provider } = makeProvider();
+    const socket = await nextSocket(1);
+    socket.onopen?.();
+    socket.receive(emptySnapshot());
+    doc.getText("body").insert(0, "x".repeat(1_200_000));
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    expect(updatesSent(socket)).toHaveLength(0);
+    expect(provider.getStatus()).toMatchObject({ pending: 0, editsRejected: true });
     provider.destroy();
   });
 

@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import { WebSocket, WebSocketServer } from "ws";
@@ -61,6 +61,7 @@ let shares: SharesService;
 const instances: Instance[] = [];
 const sessions = new Map<string, AuthenticatedUser>();
 const sockets: WebSocket[] = [];
+const outage = { session: false };
 
 beforeAll(async () => {
   ({ db, close: closeDb } = await createTestDb());
@@ -74,6 +75,7 @@ beforeAll(async () => {
   const auth = {
     api: {
       getSession: async ({ headers }: { headers: Headers }) => {
+        if (outage.session) throw new Error("database unavailable");
         const sid = /sid=([^;]+)/.exec(headers.get("cookie") ?? "")?.[1];
         const user = sid ? sessions.get(sid) : undefined;
         return user ? { session: { id: sid }, user } : null;
@@ -377,5 +379,36 @@ describe("single-document shares on live sockets", () => {
     await workspaces.removeMember(ws.id, owner, member.id);
     expect((await client.waitFor("access.updated")).payload.role).toBe("viewer");
     expect(client.socket.readyState).toBe(WebSocket.OPEN);
+  });
+});
+
+describe("database trouble", () => {
+  it("asks the client to retry, instead of saying it is signed out, when the session can't be checked", async () => {
+    const { doc, owner } = await fixture();
+    const sid = await signIn(owner);
+    outage.session = true;
+    try {
+      expect(await connect(instances[0]!, doc.id, sid).closed).toBe(CLOSE_CODES.tryAgain);
+    } finally {
+      outage.session = false;
+    }
+  });
+
+  it("closes for a retry when an update can't be saved, and saves it when sent again", async () => {
+    const { doc, owner } = await fixture();
+    const sid = await signIn(owner);
+    const client = connect(instances[0]!, doc.id, sid);
+    await client.waitFor("document.snapshot");
+    const spy = vi.spyOn(documents, "persistUpdate").mockRejectedValueOnce(new Error("connection terminated"));
+    const message = body(doc.id, update("keep me"));
+    client.send("document.update", message);
+    expect(await client.closed).toBe(CLOSE_CODES.tryAgain);
+    expect(client.messages.some((m) => m.type === "document.ack")).toBe(false);
+    spy.mockRestore();
+
+    const again = connect(instances[0]!, doc.id, sid);
+    await again.waitFor("document.snapshot");
+    again.send("document.update", message);
+    expect((await again.waitFor("document.ack")).payload.version).toBe(1);
   });
 });

@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
+import { ForbiddenException, Inject, Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import { and, gt, inArray } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage } from "node:http";
@@ -158,7 +158,15 @@ export class CollaborationService implements OnModuleInit, OnModuleDestroy {
     const documentId = url.searchParams.get("documentId") ?? "";
     const clientId = (url.searchParams.get("clientId") ?? randomUUID()).slice(0, 64);
 
-    const session = await resolveSession(this.auth, request.headers).catch(() => null);
+    // "Couldn't check" must never be reported as "signed out": clients give up on that, but retry this.
+    const session = await resolveSession(this.auth, request.headers).catch((error) => {
+      this.logger.warn(`session check failed: ${String(error)}`);
+      return undefined;
+    });
+    if (session === undefined) {
+      socket.close(CLOSE_CODES.tryAgain, "Try again shortly");
+      return null;
+    }
     if (!session) {
       socket.close(CLOSE_CODES.unauthenticated, "Sign in to collaborate");
       return null;
@@ -179,8 +187,13 @@ export class CollaborationService implements OnModuleInit, OnModuleDestroy {
         windowStart: Date.now(),
         windowCount: 0
       };
-    } catch {
-      socket.close(CLOSE_CODES.notFound, "Document not found or access denied");
+    } catch (error) {
+      if (error instanceof NotFoundException || error instanceof ForbiddenException) {
+        socket.close(CLOSE_CODES.notFound, "Document not found or access denied");
+      } else {
+        this.logger.warn(`access check failed: ${String(error)}`);
+        socket.close(CLOSE_CODES.tryAgain, "Try again shortly");
+      }
       return null;
     }
   }
@@ -206,6 +219,9 @@ export class CollaborationService implements OnModuleInit, OnModuleDestroy {
   /* ---------------- inbound messages ---------------- */
 
   async onMessage(connection: Connection, raw: string): Promise<void> {
+    if (connection.socket.readyState !== WebSocket.OPEN) {
+      return;
+    }
     if (!this.withinRateLimit(connection)) {
       connection.socket.close(CLOSE_CODES.rateLimited, "Too many messages");
       return;
@@ -232,6 +248,17 @@ export class CollaborationService implements OnModuleInit, OnModuleDestroy {
       }
     } catch (error) {
       this.logger.error(`message handling failed: ${String(error)}`);
+      if (type === "document.update") {
+        // The update may not be saved, and later ones can depend on it. Closing makes the client resend
+        // everything unacknowledged once it reconnects. Carrying on would leave a hole in the document.
+        if (error instanceof NotFoundException) {
+          this.revoke(connection, CLOSE_CODES.notFound, "This document was deleted");
+        } else {
+          connection.socket.close(CLOSE_CODES.tryAgain, "Couldn't save, try again shortly");
+          this.drop(connection.socket);
+        }
+        return;
+      }
       this.send(connection, { type: "error", message: "Something went wrong handling that message" });
     }
   }
