@@ -78,10 +78,6 @@ export class CollaborationService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  get connectionCount(): number {
-    return this.bySocket.size;
-  }
-
   /* ---------------- connection lifecycle ---------------- */
 
   async handleConnection(socket: WebSocket, request: IncomingMessage): Promise<void> {

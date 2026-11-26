@@ -82,13 +82,12 @@ export default function DocumentPage() {
   const role = status.role ?? meta.data?.role ?? null;
   const readOnly = !roleCan(role, "document.write") || Boolean(status.closedReason);
   const canTitle = roleCan(role, "document.write") && !status.closedReason;
-  const stickyTop = "top-0";
 
   return (
     <div className="flex min-h-full flex-col">
       {/* The visible title is an editable field, so the page's heading is provided separately. */}
       <h1 className="sr-only">{meta.data?.title ?? "Document"}</h1>
-      <header className={cn("sticky z-20 border-b border-border bg-background/90 backdrop-blur", stickyTop)}>
+      <header className="sticky top-0 z-20 border-b border-border bg-background/90 backdrop-blur">
         <div className="mx-auto flex w-full max-w-3xl flex-wrap items-center gap-x-3 gap-y-1 px-5 py-2 sm:px-8">
           <div className="min-w-0 flex-1 basis-56">
             {meta.data ? (

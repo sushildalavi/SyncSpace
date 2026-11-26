@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, Get, HttpCode, Inject, Query, Req } from "@nestjs/common";
-import { and, desc, eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import type { IncomingHttpHeaders } from "node:http";
 import { AccountDeleteSchema, type AccountDeleteInput } from "@syncspace/contracts";
 import type { AuthContext, AuthenticatedUser } from "../auth/session.guard.js";
@@ -42,7 +42,7 @@ export class MeController {
     return this.db
       .select({ id: auditEvent.id, type: auditEvent.type, createdAt: auditEvent.createdAt, metadata: auditEvent.metadata })
       .from(auditEvent)
-      .where(and(eq(auditEvent.actorId, user.id)))
+      .where(eq(auditEvent.actorId, user.id))
       .orderBy(desc(auditEvent.createdAt))
       .limit(take);
   }
