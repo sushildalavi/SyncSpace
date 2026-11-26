@@ -131,7 +131,7 @@ See [docs/testing.md](docs/testing.md). GitHub Actions runs lint, typecheck, uni
 
 Stated plainly:
 
-- **Live Google sign-in has not been exercised** because no Google credentials were available to this project. The OAuth handling is tested end to end against a local OIDC stand-in. Use the [live checklist](docs/auth/google-setup.md#live-verification-checklist) with your own client.
+- **Live Google sign-in has been checked locally only** (2026-11-25, one test user, consent screen in *Testing*): sign-in, sign-out and sign-in again to the same account. A public domain, a published consent screen and live account linking from Settings are untested. The other OAuth paths are covered against a local OIDC stand-in. [Details](docs/auth/google-setup.md#4-what-is-and-isnt-verified).
 - **No hosted demo.** There is no public deployment, so run it locally (two commands above). The [single-server setup](docs/deployment.md) has been rehearsed locally but not on a public server.
 - **Fault injection is one scenario on one machine** (Redis pause and flush, a frozen instance, `kill -9`). It found and fixed three real defects, and its limits are listed in [docs/benchmarks/fault-injection.md](docs/benchmarks/fault-injection.md#limits-of-this-test). PostgreSQL failure and long outages are untested.
 - Sharing is per workspace, not per document. There are no public share links.

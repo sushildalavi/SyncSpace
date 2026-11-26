@@ -78,7 +78,8 @@ Linking and unlinking require a *fresh* session (signed in within the last day).
 | Layer | Evidence |
 | --- | --- |
 | OAuth handling in this app: state, PKCE (S256), scopes, ID-token verification, cancel and tamper paths, linking rules | `e2e/google.spec.ts`, which runs Better Auth's real callback code against `e2e/support/mock-google.mjs` (a local OIDC stand-in that signs RS256 tokens and enforces PKCE, redirect URI and client credentials) |
-| **Live Google**: that your Cloud project, consent screen and redirect URI are configured correctly | **Not verified here.** No Google credentials were available. Run the checklist below with your own client. |
+| **Live Google, local machine** (2026-11-25): one test user, consent screen in *Testing*, Docker Compose stack | Signed in, signed out and signed in again to the same account. Google's account page listed only profile information for the app. The database held no Google access, refresh or ID token. |
+| **Live Google, everything else**: a public domain, a published consent screen, other accounts, connecting and disconnecting from Settings, cancelling at Google | **Not verified.** Run the checklist below with your own client. |
 
 ### Live verification checklist
 

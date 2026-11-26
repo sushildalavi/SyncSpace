@@ -80,8 +80,8 @@ mail server:
 - the session cookie is `__Secure-`, `HttpOnly`, `SameSite=Lax`;
 - data survives `down` and `up`, and the backup and restore commands recover a deleted document.
 
-**Not verified:** a real server, public DNS, publicly trusted certificates, a real mail provider, and live Google
-sign-in.
+**Not verified:** a real server, public DNS, publicly trusted certificates, a real mail provider, and Google sign-in
+on a public domain (it has been [checked locally](auth/google-setup.md#4-what-is-and-isnt-verified)).
 
 ## Limits
 
