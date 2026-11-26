@@ -202,6 +202,14 @@ describe("account deletion", () => {
     expect(await person.client.session()).not.toBeNull();
   });
 
+  it("holds the limit against simultaneous guesses", async () => {
+    const person = await register();
+    const results = await Promise.allSettled(Array.from({ length: 12 }, () => remove(person, { password: "wrong-password-1" })));
+    const statuses = results.map((result) => (result.status === "rejected" ? (result.reason as { status: number }).status : 200));
+    expect(statuses.filter((status) => status === 400).length).toBeLessThanOrEqual(5);
+    expect(statuses.filter((status) => status === 429).length).toBeGreaterThanOrEqual(7);
+  });
+
   it("is blocked while others depend on this person as the only owner", async () => {
     const owner = await register();
     const member = await register();

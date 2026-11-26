@@ -138,22 +138,24 @@ export class AccountService {
     if (!password) {
       throw new BadRequestException("Enter your password to confirm");
     }
-    // This check runs outside Better Auth's HTTP rate limiter, so it keeps its own count in the database.
-    const [failures] = await this.db
+    // This check runs outside Better Auth's HTTP rate limiter, so it keeps its own count in the database. The
+    // attempt is recorded BEFORE the password is checked, so simultaneous guesses can't all slip under the limit.
+    const [attempt] = await this.db.insert(auditEvent).values({ actorId: userId, type: "account.delete_denied" }).returning({ id: auditEvent.id });
+    const [recent] = await this.db
       .select({ total: count() })
       .from(auditEvent)
       .where(
         and(eq(auditEvent.actorId, userId), eq(auditEvent.type, "account.delete_denied"), gt(auditEvent.createdAt, new Date(Date.now() - FAILURE_WINDOW_MS)))
       );
-    if ((failures?.total ?? 0) >= MAX_PASSWORD_FAILURES) {
+    if ((recent?.total ?? 0) > MAX_PASSWORD_FAILURES) {
       throw new HttpException("Too many attempts. Try again in 15 minutes.", HttpStatus.TOO_MANY_REQUESTS);
     }
     try {
       await this.auth.api.verifyPassword({ body: { password }, headers: fromNodeHeaders(headers) });
     } catch {
-      await this.audit.record({ type: "account.delete_denied", actorId: userId });
       throw new BadRequestException("That password isn't correct");
     }
+    await this.db.delete(auditEvent).where(eq(auditEvent.id, attempt!.id));
   }
 
   private async plan(executor: Db | Tx, userId: string) {
