@@ -48,7 +48,7 @@ export default function HomePage() {
   if (workspaces.isError) {
     return (
       <Page>
-        <QueryError error={workspaces.error} retry={() => void workspaces.refetch()} what="your workspaces" />
+        <QueryError heading="h1" error={workspaces.error} retry={() => void workspaces.refetch()} what="your workspaces" />
       </Page>
     );
   }
@@ -56,7 +56,7 @@ export default function HomePage() {
   if (workspaces.data && workspaces.data.length === 0 && (invitations.data?.length ?? 0) === 0 && shared.data?.length === 0) {
     return (
       <Page narrow>
-        <PageHeader title={`Welcome${firstName ? `, ${firstName}` : ""}`} description="Create a workspace to start writing with your team." />
+        <PageHeader documentTitle="Home" title={`Welcome${firstName ? `, ${firstName}` : ""}`} description="Create a workspace to start writing with your team." />
         <div className="rounded-lg border border-border bg-surface p-6 shadow-xs">
           <h2 className="mb-1 text-lg font-semibold">Name your first workspace</h2>
           <p className="mb-5 text-sm text-muted-foreground">Usually a team or project. You can invite people once it exists.</p>
@@ -68,7 +68,7 @@ export default function HomePage() {
 
   return (
     <Page>
-      <PageHeader title={`Good to see you${firstName ? `, ${firstName}` : ""}`} description="Pick up where you left off." />
+      <PageHeader documentTitle="Home" title={`Good to see you${firstName ? `, ${firstName}` : ""}`} description="Pick up where you left off." />
 
       {invitations.data && invitations.data.length > 0 ? (
         <Section title="Invitations">

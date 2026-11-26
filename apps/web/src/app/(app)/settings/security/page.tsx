@@ -163,7 +163,7 @@ export default function SecuritySettings() {
             <h2 id="sessions-heading" className="text-lg font-semibold">Active sessions</h2>
             <p className="text-sm text-muted-foreground">Devices currently signed in to your account. Signing one out also closes any documents it has open.</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button size="sm" onClick={revokeOthers} loading={revoking === "others"} disabled={(sessions.data?.length ?? 0) < 2}>Sign out other devices</Button>
             <Button size="sm" variant="ghost" onClick={revokeAll} loading={revoking === "all"}>Sign out everywhere</Button>
           </div>

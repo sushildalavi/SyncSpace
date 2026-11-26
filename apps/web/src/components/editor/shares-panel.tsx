@@ -68,7 +68,7 @@ export function SharesPanel({ documentId }: { documentId: string }) {
     <section aria-labelledby="shares-heading" className="space-y-3">
       <div>
         <h3 id="shares-heading" className="font-semibold">Only this document</h3>
-        <p className="text-sm text-muted-foreground">They see this document and nothing else in the workspace. They need to confirm that email address.</p>
+        <p className="text-sm text-muted-foreground">They see this document, including its version history, and nothing else in the workspace. They need to confirm that email address.</p>
       </div>
       <form noValidate onSubmit={handleSubmit(add)} className="flex flex-col gap-2 sm:flex-row sm:items-start">
         <Field id="share-email" label="Share with email" className="flex-1" error={errors.email?.message}>
@@ -76,7 +76,7 @@ export function SharesPanel({ documentId }: { documentId: string }) {
         </Field>
         <Field id="share-role" label="Can">
           {(aria) => (
-            <Select {...aria} {...register("role")}>
+            <Select {...aria} className="sm:w-28" {...register("role")}>
               <option value="viewer">View</option>
               <option value="editor">Edit</option>
             </Select>
@@ -93,7 +93,7 @@ export function SharesPanel({ documentId }: { documentId: string }) {
           {shares.data.map((share) => (
             <li key={share.id} className="flex items-center gap-2 border-b border-border p-3 last:border-b-0">
               <span className="min-w-0 flex-1 truncate text-sm">{share.email}</span>
-              <Select aria-label={`Access for ${share.email}`} value={share.role} onChange={(event) => void change(share, event.target.value as ShareRole)}>
+              <Select aria-label={`Access for ${share.email}`} className="h-8 w-28 shrink-0" value={share.role} onChange={(event) => void change(share, event.target.value as ShareRole)}>
                 <option value="viewer">View</option>
                 <option value="editor">Edit</option>
               </Select>

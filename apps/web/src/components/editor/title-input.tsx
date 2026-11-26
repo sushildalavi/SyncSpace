@@ -45,7 +45,7 @@ export function TitleInput({ documentId, workspaceId, title, editable }: { docum
           event.currentTarget.blur();
         }
       }}
-      className={cn("w-full min-w-0 truncate rounded-md bg-transparent px-1.5 py-0.5 text-lg font-semibold tracking-tight outline-none transition-colors placeholder:text-muted-foreground", editable && "hover:bg-muted focus:bg-muted")}
+      className={cn("w-full min-w-0 truncate rounded-md bg-transparent px-1.5 py-0.5 text-lg font-semibold tracking-tight outline-none transition-colors placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring", editable && "hover:bg-muted focus:bg-muted")}
       placeholder="Untitled"
     />
   );

@@ -1,10 +1,14 @@
+"use client";
+
+import { usePageTitle } from "@/lib/use-page-title";
 import { cn } from "@/lib/utils";
 
 export function Page({ children, className, narrow }: { children: React.ReactNode; className?: string; narrow?: boolean }) {
   return <div className={cn("mx-auto w-full px-5 py-8 sm:px-8 sm:py-10", narrow ? "max-w-3xl" : "max-w-5xl", className)}>{children}</div>;
 }
 
-export function PageHeader({ title, description, actions, eyebrow }: { title: React.ReactNode; description?: React.ReactNode; actions?: React.ReactNode; eyebrow?: React.ReactNode }) {
+export function PageHeader({ title, documentTitle, description, actions, eyebrow }: { title: React.ReactNode; documentTitle?: string; description?: React.ReactNode; actions?: React.ReactNode; eyebrow?: React.ReactNode }) {
+  usePageTitle(documentTitle ?? (typeof title === "string" ? title : null));
   return (
     <header className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
       <div className="min-w-0">

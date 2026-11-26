@@ -20,6 +20,10 @@ test.describe("sharing a single document", () => {
     await dialog.getByLabel("Can", { exact: true }).selectOption("editor");
     await dialog.getByRole("button", { name: "Share", exact: true }).click();
     await expect(dialog.getByRole("combobox", { name: `Access for ${guest.user.email}` })).toHaveValue("editor");
+    // the address must be readable next to its access level
+    const address = dialog.getByRole("listitem").getByText(guest.user.email);
+    await expect(address).toBeVisible();
+    expect((await address.boundingBox())!.width).toBeGreaterThan(150);
     await scan(page, "share dialog");
     await page.keyboard.press("Escape"); // a modal dialog hides the page behind it
 

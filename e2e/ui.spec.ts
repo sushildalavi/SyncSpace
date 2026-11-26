@@ -143,6 +143,72 @@ test.describe("keyboard and navigation", () => {
   });
 });
 
+test.describe("structure a screen reader relies on", () => {
+  /** Headings in the page's own structure; headings a person typed into a document are their content. */
+  const outline = (page: Page) =>
+    page.evaluate(() =>
+      [...document.querySelectorAll("h1,h2,h3,h4")]
+        .filter((node) => !node.closest(".ProseMirror") && (node as HTMLElement).checkVisibility())
+        .map((node) => Number(node.tagName[1]))
+    );
+
+  test("every page has its own title, one main region, an ordered heading outline and fits 320px", async ({ page }) => {
+    test.setTimeout(90_000);
+    await page.goto("/forgot-password");
+    await expect(page).toHaveTitle("Reset your password · SyncSpace");
+    await page.goto("/nothing-here");
+    await expect(page).toHaveTitle("Page not found · SyncSpace");
+    await expect(page.getByRole("main")).toHaveCount(1);
+
+    const { workspaceId, documentId } = await seed(page);
+    const pages: Array<[string, string]> = [
+      ["/", "Home"],
+      [`/w/${workspaceId}`, "Design space"],
+      [`/w/${workspaceId}/members`, "Members"],
+      [`/w/${workspaceId}/settings`, "Workspace settings"],
+      [`/d/${documentId}`, "Untitled"],
+      [`/d/${documentId}/history`, "Version history · Untitled"],
+      ["/settings", "Profile settings"],
+      ["/settings/security", "Security settings"],
+      ["/settings/connections", "Connections settings"],
+      ["/settings/appearance", "Appearance settings"],
+      ["/d/00000000-0000-0000-0000-000000000000", "Not found"]
+    ];
+    await page.setViewportSize({ width: 320, height: 640 });
+    for (const [route, title] of pages) {
+      await page.goto(route);
+      await expect(page, route).toHaveTitle(`${title} · SyncSpace`);
+      await expect(page.getByRole("main"), route).toHaveCount(1);
+      await page.waitForTimeout(400);
+      const levels = await outline(page);
+      expect(levels.filter((level) => level === 1), `one h1 on ${route}`).toHaveLength(1);
+      expect(levels[0], `h1 comes first on ${route}`).toBe(1);
+      for (let index = 1; index < levels.length; index += 1) expect(levels[index]! - levels[index - 1]!, `skipped heading level on ${route}`).toBeLessThanOrEqual(1);
+      expect(await page.evaluate(() => { const main = document.querySelector("main")!; return main.scrollWidth - main.clientWidth; }), `320px overflow on ${route}`).toBeLessThanOrEqual(1);
+    }
+  });
+
+  test("in-app navigation renames the page, and the editor is not a keyboard trap", async ({ page }) => {
+    const { documentId } = await seed(page);
+    await page.goto("/");
+    await expect(page).toHaveTitle("Home · SyncSpace");
+    await page.getByRole("link", { name: "Members" }).click();
+    await expect(page).toHaveTitle("Members · SyncSpace");
+
+    await page.goto(`/d/${documentId}`);
+    const editor = page.getByRole("textbox", { name: "Document body" });
+    await editor.click();
+    await page.keyboard.press("ControlOrMeta+a");
+    await page.keyboard.type("- one");
+    await page.keyboard.press("Enter");
+    await page.keyboard.type("two");
+    // Tab indents a list item once; after that it has to move on
+    await page.keyboard.press("Tab");
+    await page.keyboard.press("Tab");
+    await expect(editor).not.toBeFocused();
+  });
+});
+
 test.describe("accessibility (axe, WCAG 2.2 AA rules)", () => {
   for (const scheme of ["light", "dark"] as const) {
     test(`public auth pages (${scheme})`, async ({ page }) => {
