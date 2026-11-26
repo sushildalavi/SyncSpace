@@ -96,8 +96,12 @@ test("product tour (desktop, light and dark)", async ({ browser }) => {
   await page.waitForTimeout(400);
   await shot(page, "editor-collaboration-light");
 
-  await page.getByRole("button", { name: "Share" }).click();
+  await page.getByRole("button", { name: "Share", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Share this document" })).toBeVisible();
+  await page.getByRole("dialog").getByLabel("Share with email").fill("sam@example.test");
+  await page.getByRole("dialog").getByRole("button", { name: "Share", exact: true }).click();
+  await expect(page.getByRole("combobox", { name: "Access for sam@example.test" })).toBeVisible();
+  await expect(page.locator("[data-sonner-toast]")).toHaveCount(0, { timeout: 10_000 });
   await shot(page, "share-dialog-light");
   await page.keyboard.press("Escape");
 
@@ -116,6 +120,9 @@ test("product tour (desktop, light and dark)", async ({ browser }) => {
   await page.goto("/settings/connections");
   await expect(page.getByText("Sign-in methods")).toBeVisible();
   await shot(page, "connections-light");
+  await page.goto("/settings");
+  await expect(page.getByRole("heading", { name: "Delete account" })).toBeVisible();
+  await shot(page, "account-light", true);
   await page.goto(`/d/${ids[0]}/history`);
   await expect(page.getByRole("navigation", { name: "Versions" })).toBeVisible();
   await page.getByRole("navigation", { name: "Versions" }).getByRole("button").nth(1).click(); // an older version, so Restore is offered

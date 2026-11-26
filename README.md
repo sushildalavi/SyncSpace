@@ -12,7 +12,7 @@ Full-stack TypeScript: Next.js · NestJS · PostgreSQL · Yjs · Redis · Better
 | Watch two browsers edit one document | [Demo walkthrough](#demo-walkthrough) |
 | See how permissions are enforced on live sockets | [`collaboration.service.ts`](apps/api/src/collaboration/collaboration.service.ts) · [tests](apps/api/test/collaboration.service.spec.ts) |
 | See how multi-server delivery works | [Architecture](docs/architecture/overview.md) · [ADR 0004](docs/adr/0004-stream-fanout.md) |
-| Numbers | [Benchmark](docs/benchmarks/collaboration.md): 280 clients on two API instances, 4,000 updates, 0 divergence, p95 ack ≈ 64 ms. [Fault injection](docs/benchmarks/fault-injection.md): survives Redis loss and a crash |
+| Numbers | [Benchmark](docs/benchmarks/collaboration.md): 280 clients on two API instances, 4,000 updates, 0 divergence, p95 ack ≈ 64 ms. [Fault injection](docs/benchmarks/fault-injection.md): no acknowledged edit lost through Redis, database and instance failures, including 90 s outages |
 | What was wrong before, and what changed | [Baseline and outcome](docs/modernization/baseline.md) |
 
 ## Features
@@ -20,9 +20,9 @@ Full-stack TypeScript: Next.js · NestJS · PostgreSQL · Yjs · Redis · Better
 - **Collaborative rich-text editor** (Tiptap on Yjs): headings, bold/italic/underline/strike, lists, quotes, code, links, keyboard shortcuts, remote cursors with names, presence avatars.
 - **Honest sync state**: *Saved* appears only after the server acknowledged persistence. *Offline*, *Reconnecting* and *View only* are real connection and role states.
 - **Offline-first**: edits made offline are queued in IndexedDB, survive a reload, and replay idempotently on reconnect.
-- **Workspaces and roles** (Owner / Editor / Viewer) with invitations by email, live role changes and last-owner protection. Removing a member or revoking a session closes their open documents immediately.
+- **Workspaces and roles** (Owner / Editor / Viewer) with invitations by email, live role changes and last-owner protection. A **single document can be shared** with someone outside the workspace, as viewer or editor. Removing a member or revoking a session closes their open documents immediately.
 - **Version history** with read-only previews of any past version and **one-click restore**. A restore is saved as a new version, so it can itself be undone. **Favorites, recents, search and a ⌘K command menu.**
-- **Account security**: Argon2id passwords, email verification, password reset, database-backed sessions with a per-device list and revocation, **Google sign-in** with explicit-only account linking, security activity log.
+- **Account security**: Argon2id passwords, email verification, password reset, database-backed sessions with a per-device list and revocation, **two-factor sign-in** with backup codes, **Google sign-in** with explicit-only account linking, email change approved from both addresses, account deletion, security activity log.
 - **Design system**: light and dark themes, tokenised colour/type/radius/shadow/motion/focus, responsive down to 375 px, axe-scanned against WCAG 2.2 AA rules, reduced-motion support.
 
 <table>
@@ -40,7 +40,7 @@ Full-stack TypeScript: Next.js · NestJS · PostgreSQL · Yjs · Redis · Better
 </tr>
 </table>
 
-More: [command menu](docs/screenshots/command-menu-light.png) · [members](docs/screenshots/members-light.png) · [version history](docs/screenshots/history-light.png) · [connections](docs/screenshots/connections-light.png) · [mobile navigation](docs/screenshots/mobile-navigation.png)
+More: [command menu](docs/screenshots/command-menu-light.png) · [members](docs/screenshots/members-light.png) · [version history](docs/screenshots/history-light.png) · [connections](docs/screenshots/connections-light.png) · [account](docs/screenshots/account-light.png) · [mobile navigation](docs/screenshots/mobile-navigation.png)
 
 ## Quick start
 
@@ -118,7 +118,7 @@ docker compose up -d postgres redis mailpit
 docker compose exec postgres psql -U syncspace -d postgres -c "create database syncspace_test"
 pnpm test:e2e                                  # real browsers against the real stack
 scripts/bench.sh                               # multi-instance load test
-scripts/fault-injection.sh                     # Redis pause/flush, frozen instance, kill -9 under load
+scripts/fault-injection.sh                     # break Redis, PostgreSQL or an instance under load
 ```
 
 See [docs/testing.md](docs/testing.md). GitHub Actions runs lint, typecheck, unit tests, build, the full Playwright suite and Docker image builds.
@@ -133,8 +133,8 @@ Stated plainly:
 
 - **Live Google sign-in has been checked locally only** (2026-11-25, one test user, consent screen in *Testing*): sign-in, sign-out and sign-in again to the same account. A public domain, a published consent screen and live account linking from Settings are untested. The other OAuth paths are covered against a local OIDC stand-in. [Details](docs/auth/google-setup.md#4-what-is-and-isnt-verified).
 - **No hosted demo.** There is no public deployment, so run it locally (two commands above). The [single-server setup](docs/deployment.md) has been rehearsed locally but not on a public server.
-- **Fault injection is one scenario on one machine** (Redis pause and flush, a frozen instance, `kill -9`). It found and fixed three real defects, and its limits are listed in [docs/benchmarks/fault-injection.md](docs/benchmarks/fault-injection.md#limits-of-this-test). PostgreSQL failure and long outages are untested.
-- Sharing is per workspace, not per document. There are no public share links.
-- Email change, account deletion and two-factor authentication are not implemented.
-- Accessibility is checked with axe's WCAG 2.2 AA rules plus keyboard tests. Automated tools cover only part of the criteria, and there has been no screen-reader or manual audit.
+- **Fault injection runs on one machine**, three scripted scenarios. It found and fixed six real defects. Network partitions, database failover and longer outages are untested ([limits](docs/benchmarks/fault-injection.md#limits-of-these-tests)).
+- There are no public share links: a shared document needs a confirmed account with that email address.
+- Two-factor sign-in uses an authenticator app and covers password sign-in. Google sign-in relies on the Google account's own protection.
+- **No screen-reader testing.** Accessibility is checked with axe's WCAG 2.2 AA rules, keyboard tests and a structure review ([details](docs/accessibility.md)).
 - Migrated legacy users are imported as unverified and need to confirm their email if verification is enforced.
