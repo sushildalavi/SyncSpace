@@ -106,6 +106,16 @@ export async function newUserContext(browser: Browser, label: string): Promise<{
   return { context, page, user };
 }
 
+/**
+ * The security page grows as sign-in methods and sessions load, so a button clicked before then can move out from
+ * under the pointer. Waits for both. Only for accounts that have a password.
+ */
+export async function openSecuritySettings(page: Page): Promise<void> {
+  await page.goto("/settings/security");
+  await expect(page.getByLabel("Current password")).toBeVisible();
+  await expect(page.getByText("This device")).toBeVisible();
+}
+
 export async function createWorkspace(page: Page, name = "Acme"): Promise<string> {
   await page.getByLabel("Workspace name").fill(name);
   await page.getByRole("button", { name: "Create workspace" }).click();
