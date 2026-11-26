@@ -147,7 +147,8 @@ and the limits of those results are in [Performance and failure testing](docs/pe
   available only through the API.
 - The update log is never pruned, so storage grows with every edit. The history page lists the latest 200 updates.
 - Search matches document titles, not their contents.
-- Only the authentication routes and account deletion are rate limited. Invitation and sharing emails are not.
+- Authentication routes, account deletion and collaboration socket messages are rate limited. Invitation and sharing
+  emails are not.
 - Two-factor codes apply to password sign-in, not Google sign-in.
 - The production setup is a single server with one API instance. It has been rehearsed locally, not on a public server.
 - No screen-reader testing has been done.
