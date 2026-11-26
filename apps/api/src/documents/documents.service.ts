@@ -1,12 +1,11 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, desc, eq, gt, ilike, isNull, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, exists, gt, ilike, isNull, lte, notExists, or, sql } from "drizzle-orm";
 import { createHash, randomUUID } from "node:crypto";
 import * as Y from "yjs";
-import { ROLE_PERMISSIONS } from "@syncspace/contracts";
 import { AccessService } from "../access/access.service.js";
 import { AuditService } from "../audit/audit.service.js";
 import { DB, type Db } from "../db/database.module.js";
-import { document, documentFavorite, documentSnapshot, documentUpdate, documentView, user, workspace, workspaceMember } from "../db/schema.js";
+import { document, documentFavorite, documentShare, documentSnapshot, documentUpdate, documentView, user, workspace, workspaceMember } from "../db/schema.js";
 import { RealtimeBus, SERVER_CONNECTION } from "../realtime/realtime-bus.service.js";
 
 /** Snapshot once this many updates have accumulated since the previous one. */
@@ -59,7 +58,7 @@ export class DocumentsService {
   }
 
   async get(documentId: string, userId: string) {
-    const { document: doc, role } = await this.access.requireDocument(documentId, userId, "document.read");
+    const { document: doc, role, permissions, workspaceRole } = await this.access.requireDocument(documentId, userId, "document.read");
     await this.db
       .insert(documentView)
       .values({ userId, documentId })
@@ -69,7 +68,8 @@ export class DocumentsService {
       .from(documentFavorite)
       .where(and(eq(documentFavorite.documentId, documentId), eq(documentFavorite.userId, userId)))
       .limit(1);
-    return { ...doc, role, permissions: ROLE_PERMISSIONS[role], isFavorite: Boolean(favorite) };
+    // workspaceRole is null for someone who only has a share, so the app hides workspace controls from them.
+    return { ...doc, role, permissions, workspaceRole, isFavorite: Boolean(favorite) };
   }
 
   async rename(documentId: string, title: string, userId: string) {
@@ -95,8 +95,32 @@ export class DocumentsService {
     return { isFavorite: favorite };
   }
 
-  /** Documents in workspaces the user still belongs to. */
-  private accessibleDocuments(userId: string) {
+  private isMember(userId: string) {
+    return this.db
+      .select({ one: sql`1` })
+      .from(workspaceMember)
+      .where(and(eq(workspaceMember.workspaceId, document.workspaceId), eq(workspaceMember.userId, userId)));
+  }
+
+  private hasShare(userId: string) {
+    return this.db
+      .select({ one: sql`1` })
+      .from(documentShare)
+      .innerJoin(user, eq(user.id, userId))
+      .where(
+        and(
+          eq(documentShare.documentId, document.id),
+          or(eq(documentShare.userId, userId), and(isNull(documentShare.userId), eq(documentShare.email, user.email), eq(user.emailVerified, true)))
+        )
+      );
+  }
+
+  /** SQL condition: a live document this user may read. The same rule AccessService applies to one document. */
+  private readableBy(userId: string) {
+    return and(isNull(document.deletedAt), isNull(workspace.archivedAt), or(exists(this.isMember(userId)), exists(this.hasShare(userId))));
+  }
+
+  private links(userId: string) {
     return this.db
       .select({
         id: document.id,
@@ -106,8 +130,9 @@ export class DocumentsService {
         updatedAt: document.updatedAt
       })
       .from(document)
-      .innerJoin(workspace, and(eq(workspace.id, document.workspaceId), isNull(workspace.archivedAt)))
-      .innerJoin(workspaceMember, and(eq(workspaceMember.workspaceId, document.workspaceId), eq(workspaceMember.userId, userId)));
+      .innerJoin(workspace, eq(workspace.id, document.workspaceId))
+      .$dynamic()
+      .where(this.readableBy(userId));
   }
 
   async recent(userId: string, limit = 8) {
@@ -120,10 +145,9 @@ export class DocumentsService {
         viewedAt: documentView.viewedAt
       })
       .from(documentView)
-      .innerJoin(document, and(eq(document.id, documentView.documentId), isNull(document.deletedAt)))
-      .innerJoin(workspace, and(eq(workspace.id, document.workspaceId), isNull(workspace.archivedAt)))
-      .innerJoin(workspaceMember, and(eq(workspaceMember.workspaceId, document.workspaceId), eq(workspaceMember.userId, userId)))
-      .where(eq(documentView.userId, userId))
+      .innerJoin(document, eq(document.id, documentView.documentId))
+      .innerJoin(workspace, eq(workspace.id, document.workspaceId))
+      .where(and(eq(documentView.userId, userId), this.readableBy(userId)))
       .orderBy(desc(documentView.viewedAt))
       .limit(limit);
   }
@@ -138,11 +162,26 @@ export class DocumentsService {
         updatedAt: document.updatedAt
       })
       .from(documentFavorite)
-      .innerJoin(document, and(eq(document.id, documentFavorite.documentId), isNull(document.deletedAt)))
-      .innerJoin(workspace, and(eq(workspace.id, document.workspaceId), isNull(workspace.archivedAt)))
-      .innerJoin(workspaceMember, and(eq(workspaceMember.workspaceId, document.workspaceId), eq(workspaceMember.userId, userId)))
-      .where(eq(documentFavorite.userId, userId))
+      .innerJoin(document, eq(document.id, documentFavorite.documentId))
+      .innerJoin(workspace, eq(workspace.id, document.workspaceId))
+      .where(and(eq(documentFavorite.userId, userId), this.readableBy(userId)))
       .orderBy(desc(documentFavorite.createdAt));
+  }
+
+  /** Documents shared directly with this user from workspaces they don't belong to. */
+  async sharedWithMe(userId: string) {
+    return this.db
+      .select({
+        id: document.id,
+        workspaceId: document.workspaceId,
+        workspaceName: workspace.name,
+        title: document.title,
+        updatedAt: document.updatedAt
+      })
+      .from(document)
+      .innerJoin(workspace, eq(workspace.id, document.workspaceId))
+      .where(and(isNull(document.deletedAt), isNull(workspace.archivedAt), exists(this.hasShare(userId)), notExists(this.isMember(userId))))
+      .orderBy(desc(document.updatedAt));
   }
 
   async search(userId: string, query: string, limit = 20) {
@@ -150,8 +189,17 @@ export class DocumentsService {
     if (!trimmed) {
       return [];
     }
-    return this.accessibleDocuments(userId)
-      .where(and(isNull(document.deletedAt), ilike(document.title, `%${escapeLike(trimmed)}%`)))
+    return this.db
+      .select({
+        id: document.id,
+        workspaceId: document.workspaceId,
+        workspaceName: workspace.name,
+        title: document.title,
+        updatedAt: document.updatedAt
+      })
+      .from(document)
+      .innerJoin(workspace, eq(workspace.id, document.workspaceId))
+      .where(and(this.readableBy(userId), ilike(document.title, `%${escapeLike(trimmed)}%`)))
       .orderBy(desc(document.updatedAt))
       .limit(limit);
   }

@@ -260,9 +260,9 @@ export class CollaborationService implements OnModuleInit, OnModuleDestroy {
 
     // Authorization is re-read from the database for every write, so a viewer, or a member
     // who was just removed, can never persist an update through an already-open socket.
-    const role = await this.access.getRole(connection.workspaceId, connection.userId);
+    const role = (await this.access.getDocumentAccess(connection.documentId, connection.userId))?.role;
     if (!role) {
-      this.revoke(connection, CLOSE_CODES.accessRevoked, "Access to this workspace was removed");
+      this.revoke(connection, CLOSE_CODES.accessRevoked, "Access to this document was removed");
       return;
     }
     connection.role = role;
@@ -381,12 +381,8 @@ export class CollaborationService implements OnModuleInit, OnModuleDestroy {
           if (connection.workspaceId !== event.workspaceId || connection.userId !== event.userId) {
             continue;
           }
-          if (event.role === null) {
-            this.revoke(connection, CLOSE_CODES.accessRevoked, "Access to this workspace was removed");
-          } else if (event.role !== connection.role) {
-            connection.role = event.role;
-            this.send(connection, { type: "access.updated", payload: { role: event.role } });
-          }
+          // Membership and direct shares both grant access, so ask the database what is left.
+          void this.recheckAccess(connection).catch((error) => this.logger.warn(`access recheck failed: ${String(error)}`));
         }
         return;
       case "session.revoked":
@@ -425,17 +421,25 @@ export class CollaborationService implements OnModuleInit, OnModuleDestroy {
         this.revoke(connection, CLOSE_CODES.sessionRevoked, "Your session has ended");
         continue;
       }
-      const cacheKey = `${connection.workspaceId}:${connection.userId}`;
-      if (!roleCache.has(cacheKey)) {
-        roleCache.set(cacheKey, await this.access.getRole(connection.workspaceId, connection.userId));
-      }
-      const role = roleCache.get(cacheKey) ?? null;
-      if (!role) {
-        this.revoke(connection, CLOSE_CODES.accessRevoked, "Access to this workspace was removed");
-      } else if (role !== connection.role) {
-        connection.role = role;
-        this.send(connection, { type: "access.updated", payload: { role } });
-      }
+      await this.recheckAccess(connection, roleCache);
+    }
+  }
+
+  private async recheckAccess(connection: Connection, cache?: Map<string, WorkspaceRole | null>): Promise<void> {
+    const key = `${connection.documentId}:${connection.userId}`;
+    let role = cache?.get(key);
+    if (role === undefined) {
+      role = (await this.access.getDocumentAccess(connection.documentId, connection.userId))?.role ?? null;
+      cache?.set(key, role);
+    }
+    if (!this.bySocket.has(connection.socket)) {
+      return;
+    }
+    if (!role) {
+      this.revoke(connection, CLOSE_CODES.accessRevoked, "Access to this document was removed");
+    } else if (role !== connection.role) {
+      connection.role = role;
+      this.send(connection, { type: "access.updated", payload: { role } });
     }
   }
 

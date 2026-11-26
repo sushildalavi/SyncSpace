@@ -95,7 +95,7 @@ export default function DocumentPage() {
                     <Link href={`/d/${documentId}/history`} aria-label="Version history"><History aria-hidden /></Link>
                   </Button>
                 </Tooltip>
-                {role ? <ShareDialog workspaceId={meta.data.workspaceId} documentId={documentId} role={role} /> : null}
+                {meta.data.workspaceRole ? <ShareDialog workspaceId={meta.data.workspaceId} documentId={documentId} role={meta.data.workspaceRole} /> : null}
               </>
             ) : null}
           </div>

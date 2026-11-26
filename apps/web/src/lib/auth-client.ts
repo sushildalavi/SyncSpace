@@ -1,10 +1,12 @@
+import { twoFactorClient } from "better-auth/client/plugins";
 import { createAuthClient } from "better-auth/react";
 import { API_BASE_URL } from "./env";
 
 export const authClient = createAuthClient({
   baseURL: API_BASE_URL,
   basePath: "/api/auth",
-  fetchOptions: { credentials: "include" }
+  fetchOptions: { credentials: "include" },
+  plugins: [twoFactorClient()]
 });
 
 export const { useSession } = authClient;
@@ -23,6 +25,16 @@ export function authErrorMessage(error: { code?: string | undefined; message?: s
       return "Use at least 10 characters for your password.";
     case "INVALID_PASSWORD":
       return "Your current password is incorrect.";
+    case "INVALID_CODE":
+      return "That code isn't right. Check your authenticator app and try the newest code.";
+    case "INVALID_BACKUP_CODE":
+      return "That backup code isn't valid. Each one works only once.";
+    case "INVALID_TWO_FACTOR_COOKIE":
+      return "This sign-in timed out. Go back and sign in again.";
+    case "TOO_MANY_ATTEMPTS_REQUEST_NEW_CODE":
+      return "Too many wrong codes. Go back and sign in again.";
+    case "ACCOUNT_TEMPORARILY_LOCKED":
+      return "Too many wrong codes. Wait 15 minutes and try again.";
     case "INVALID_TOKEN":
       return "This link is invalid or has expired. Request a new one.";
     case "SOCIAL_ACCOUNT_ALREADY_LINKED":

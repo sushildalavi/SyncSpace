@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth-client";
-import { invalidateAccess, useFavorites, useMyInvitations, useRecent, useWorkspaces } from "@/lib/queries";
+import { invalidateAccess, useFavorites, useMyInvitations, useRecent, useSharedWithMe, useWorkspaces } from "@/lib/queries";
 import { useState } from "react";
 
 export default function HomePage() {
@@ -22,6 +22,7 @@ export default function HomePage() {
   const workspaces = useWorkspaces();
   const recent = useRecent();
   const favorites = useFavorites();
+  const shared = useSharedWithMe();
   const invitations = useMyInvitations();
   const client = useQueryClient();
   const router = useRouter();
@@ -52,7 +53,7 @@ export default function HomePage() {
     );
   }
 
-  if (workspaces.data && workspaces.data.length === 0 && (invitations.data?.length ?? 0) === 0) {
+  if (workspaces.data && workspaces.data.length === 0 && (invitations.data?.length ?? 0) === 0 && shared.data?.length === 0) {
     return (
       <Page narrow>
         <PageHeader title={`Welcome${firstName ? `, ${firstName}` : ""}`} description="Create a workspace to start writing with your team." />
@@ -84,6 +85,16 @@ export default function HomePage() {
               </li>
             ))}
           </ul>
+        </Section>
+      ) : null}
+
+      {shared.data && shared.data.length > 0 ? (
+        <Section title="Shared with me" description="Documents shared with you from other workspaces.">
+          <DocumentList>
+            {shared.data.map((doc) => (
+              <DocumentRow key={doc.id} id={doc.id} title={doc.title} meta={doc.workspaceName} />
+            ))}
+          </DocumentList>
         </Section>
       ) : null}
 

@@ -202,7 +202,7 @@ test.describe("permissions on a live document", () => {
     // the explanation must still be there after that reload, and the document must be gone
     await refetch;
     await expect(body(guest.page)).toHaveCount(0);
-    await expect(guest.page.getByRole("alert").filter({ hasText: "Your access to this workspace was removed" })).toBeVisible();
+    await expect(guest.page.getByRole("alert").filter({ hasText: "Your access to this document was removed" })).toBeVisible();
     // the API no longer serves the document to them either
     const response = await guest.page.request.get(`http://localhost:3101/documents/${documentId}`);
     expect(response.status()).toBe(404);

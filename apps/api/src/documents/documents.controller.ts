@@ -33,6 +33,11 @@ export class DocumentsController {
     return this.documents.favorites(user.id);
   }
 
+  @Get("documents/shared")
+  shared(@CurrentUser() user: AuthenticatedUser) {
+    return this.documents.sharedWithMe(user.id);
+  }
+
   @Get("search")
   search(@Query("q") q: string | undefined, @CurrentUser() user: AuthenticatedUser) {
     return this.documents.search(user.id, q ?? "");

@@ -4,12 +4,14 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { ProfileUpdateSchema } from "@syncspace/contracts";
 import { BadgeCheck, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
+import { ChangeEmail } from "@/components/app/change-email";
+import { DeleteAccount } from "@/components/app/delete-account";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Field } from "@/components/ui/field";
+import { Field, FormNotice } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { authClient, authErrorMessage, useSession } from "@/lib/auth-client";
 
@@ -26,6 +28,8 @@ export default function ProfileSettings() {
   useEffect(() => {
     if (user) reset({ name: user.name });
   }, [user, reset]);
+  const [fromEmailLink, setFromEmailLink] = useState(false);
+  useEffect(() => setFromEmailLink(new URLSearchParams(window.location.search).has("emailLink")), []);
 
   if (!user) return null;
 
@@ -70,6 +74,9 @@ export default function ProfileSettings() {
 
       <section aria-labelledby="email-heading" className="space-y-3">
         <h2 id="email-heading" className="text-lg font-semibold">Email</h2>
+        {fromEmailLink ? (
+          <FormNotice tone="success">Link accepted. If the address below hasn&apos;t changed yet, open the email we sent to your new address.</FormNotice>
+        ) : null}
         <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-surface p-4 shadow-xs">
           <div className="min-w-0 flex-1">
             <p className="truncate font-medium">{user.email}</p>
@@ -84,7 +91,10 @@ export default function ProfileSettings() {
             </>
           )}
         </div>
+        {user.emailVerified ? <ChangeEmail current={user.email} /> : null}
       </section>
+
+      <DeleteAccount email={user.email} />
     </div>
   );
 }

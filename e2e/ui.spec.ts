@@ -1,6 +1,5 @@
-import AxeBuilder from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
-import { API, WEB, createDocument, createWorkspace, expect, registerAndSignIn, test } from "./support/helpers";
+import { API, WEB, createDocument, createWorkspace, expect, registerAndSignIn, scan, test } from "./support/helpers";
 
 const viewports = [
   { name: "mobile", width: 375, height: 812 },
@@ -145,16 +144,10 @@ test.describe("keyboard and navigation", () => {
 });
 
 test.describe("accessibility (axe, WCAG 2.2 AA rules)", () => {
-  const scan = async (page: Page, label: string) => {
-    const results = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"]).analyze();
-    const summary = results.violations.map((v) => `${v.id} (${v.impact}): ${v.nodes.slice(0, 3).map((n) => n.target.join(" ")).join(" | ")}`);
-    expect(summary, `axe violations on ${label}`).toEqual([]);
-  };
-
   for (const scheme of ["light", "dark"] as const) {
     test(`public auth pages (${scheme})`, async ({ page }) => {
       await page.emulateMedia({ colorScheme: scheme });
-      for (const route of ["/sign-in", "/sign-up", "/forgot-password", "/auth/error?error=access_denied"]) {
+      for (const route of ["/sign-in", "/sign-up", "/forgot-password", "/two-factor", "/auth/error?error=access_denied"]) {
         await page.goto(route);
         await expect(page.locator("h1")).toBeVisible();
         await scan(page, `${route} ${scheme}`);

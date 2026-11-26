@@ -85,7 +85,8 @@ describe("MongoDB -> PostgreSQL migration", () => {
     const report = await migrateFromMongo(db, source, { dryRun: true });
     expect(report.dryRun).toBe(true);
     expect(report.counts.users!.migrated).toBe(2);
-    expect(await db.select().from(t.user)).toHaveLength(0);
+    // only the placeholder author that the schema migration itself creates
+    expect((await db.select().from(t.user)).map((row) => row.id)).toEqual(["deleted-user"]);
     expect(await db.select().from(t.document)).toHaveLength(0);
   });
 

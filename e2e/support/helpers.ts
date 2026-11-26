@@ -1,4 +1,5 @@
 import { expect as baseExpect, test as base, type APIRequestContext, type Browser, type BrowserContext, type Page } from "@playwright/test";
+import AxeBuilder from "@axe-core/playwright";
 import crypto from "node:crypto";
 
 export const API = "http://localhost:3101";
@@ -19,6 +20,27 @@ export const test = base.extend({
   }
 });
 export const expect = baseExpect;
+
+/** Fails with a readable list if axe finds a WCAG 2.2 A/AA problem on the page as it is now. */
+export async function scan(page: Page, label: string): Promise<void> {
+  // let dialog and toast animations settle, so colours aren't measured half faded in
+  await page.waitForTimeout(400);
+  const results = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"]).analyze();
+  const summary = results.violations.map((v) => `${v.id} (${v.impact}): ${v.nodes.slice(0, 3).map((n) => n.target.join(" ")).join(" | ")}`);
+  baseExpect(summary, `axe violations on ${label}`).toEqual([]);
+}
+
+/** RFC 6238, as an authenticator app computes it from the setup key. */
+export function totp(secret: string, at = Date.now()): string {
+  let bits = "";
+  for (const char of secret.replace(/=+$/, "")) bits += "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567".indexOf(char).toString(2).padStart(5, "0");
+  const key = Buffer.from(bits.match(/.{8}/g)!.map((byte) => parseInt(byte, 2)));
+  const counter = Buffer.alloc(8);
+  counter.writeBigUInt64BE(BigInt(Math.floor(at / 30_000)));
+  const digest = crypto.createHmac("sha1", key).update(counter).digest();
+  const offset = digest[digest.length - 1]! & 0xf;
+  return String((digest.readUInt32BE(offset) & 0x7fffffff) % 1_000_000).padStart(6, "0");
+}
 
 export type TestUser = { name: string; email: string; password: string };
 
