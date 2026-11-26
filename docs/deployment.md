@@ -23,7 +23,7 @@ unrelated domains cannot stay signed in. This includes two default subdomains on
 2. On the server:
 
    ```bash
-   git clone https://github.com/sushildalavi/SyncSpace.git && cd SyncSpace
+   git clone https://github.com/sushildalavi/syncspace.git && cd syncspace
    cp infrastructure/production/.env.production.example infrastructure/production/.env.production
    chmod 600 infrastructure/production/.env.production
    ```
