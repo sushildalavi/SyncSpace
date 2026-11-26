@@ -132,6 +132,30 @@ describe("CollabProvider", () => {
     provider.destroy();
   });
 
+  it("never reports saved while an edit is still waiting to be sent", async () => {
+    const { doc, provider } = makeProvider();
+    const socket = await nextSocket(1);
+    socket.onopen?.();
+    socket.receive(emptySnapshot());
+    doc.getText("body").insert(0, "a");
+    expect(provider.getStatus().pending).toBe(1); // immediately, not after the batch timer
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    doc.getText("body").insert(1, "b"); // typed while the first batch is unacknowledged
+    socket.receive({ type: "document.ack", payload: { updateId: updatesSent(socket)[0]!.payload.updateId, version: 1 } });
+    expect(provider.getStatus().pending).toBe(1);
+    provider.destroy();
+  });
+
+  it("sends the last keystrokes when the editor closes before the batch timer fires", async () => {
+    const { doc, provider } = makeProvider();
+    const socket = await nextSocket(1);
+    socket.onopen?.();
+    socket.receive(emptySnapshot());
+    doc.getText("body").insert(0, "last words");
+    provider.destroy();
+    expect(updatesSent(socket)).toHaveLength(1);
+  });
+
   it("applies a resync snapshot without replaying the backlog again", async () => {
     const { doc, provider } = makeProvider();
     const socket = await nextSocket(1);

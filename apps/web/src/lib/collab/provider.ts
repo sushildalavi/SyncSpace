@@ -27,7 +27,7 @@ const TERMINAL: Record<number, string> = {
   [CLOSE_CODES.unauthenticated]: "You've been signed out. Sign in again to keep editing.",
   [CLOSE_CODES.forbidden]: "This connection isn't allowed.",
   [CLOSE_CODES.notFound]: "This document was deleted or you no longer have access to it.",
-  [CLOSE_CODES.accessRevoked]: "Your access to this workspace was removed.",
+  [CLOSE_CODES.accessRevoked]: "Your access to this document was removed.",
   [CLOSE_CODES.sessionRevoked]: "This session was signed out from another device."
 };
 
@@ -93,6 +93,7 @@ export class CollabProvider {
     this.awareness.on("update", this.onAwarenessUpdate);
     window.addEventListener("online", this.onOnline);
     window.addEventListener("offline", this.onOffline);
+    window.addEventListener("pagehide", this.onPageHide);
     this.restored = this.restorePending();
     void this.restored.then(() => this.connect());
   }
@@ -114,8 +115,15 @@ export class CollabProvider {
   private onDocUpdate = (update: Uint8Array, origin: unknown): void => {
     if (origin === this || this.destroyed) return;
     this.outbox.push(update);
+    // Count it at once: until the batch is sent and acknowledged, this edit is not saved.
+    if (this.status.pending !== this.unsaved()) this.patch({ pending: this.unsaved() });
     this.flushTimer ??= setTimeout(() => void this.flush(), 50);
   };
+
+  /** Edits the server hasn't confirmed, including a batch that is still being collected. */
+  private unsaved(): number {
+    return this.pending.size + (this.outbox.length > 0 ? 1 : 0);
+  }
 
   private noteVersion(version: number): void {
     if (!Number.isFinite(version) || version <= this.contiguous) return;
@@ -123,17 +131,35 @@ export class CollabProvider {
     while (this.ahead.delete(this.contiguous + 1)) this.contiguous += 1;
   }
 
-  private async flush(): Promise<void> {
+  /** Turns the collected edits into one queued update. */
+  private takeBatch(): PendingUpdate | null {
+    if (this.flushTimer) clearTimeout(this.flushTimer);
     this.flushTimer = null;
-    if (this.outbox.length === 0) return;
+    if (this.outbox.length === 0) return null;
     const merged = Y.mergeUpdates(this.outbox);
     this.outbox = [];
     const entry: PendingUpdate = { updateId: crypto.randomUUID(), payload: toBase64(merged), createdAt: Date.now() };
     this.pending.set(entry.updateId, entry);
-    this.patch({ pending: this.pending.size });
+    return entry;
+  }
+
+  private async flush(): Promise<void> {
+    const entry = this.takeBatch();
+    if (!entry) return;
+    this.patch({ pending: this.unsaved() });
     await this.store.put(entry);
     this.transmit(entry);
   }
+
+  /** The tab is closing or the editor is going away: don't wait for the batch timer. */
+  private flushNow(): void {
+    const entry = this.takeBatch();
+    if (!entry) return;
+    void this.store.put(entry);
+    this.transmit(entry);
+  }
+
+  private onPageHide = (): void => this.flushNow();
 
   private transmit(entry: PendingUpdate): void {
     if (this.socket?.readyState === WebSocket.OPEN && this.status.synced && this.status.role !== "viewer") {
@@ -161,7 +187,7 @@ export class CollabProvider {
       }
       this.pending.set(merged.updateId, merged);
       void this.store.put(merged);
-      this.patch({ pending: 1 });
+      this.patch({ pending: this.unsaved() });
     }
     for (const entry of this.pending.values()) this.transmit(entry);
   }
@@ -258,7 +284,7 @@ export class CollabProvider {
           // Queued edits from before this account lost write access can never be saved.
           for (const id of this.pending.keys()) void this.store.remove(id);
           this.pending.clear();
-          this.patch({ pending: 0, editsRejected: true });
+          this.patch({ pending: this.unsaved(), editsRejected: true });
         }
         // A later snapshot on the same socket is a resync, so only the first one replays the backlog.
         if (!wasSynced) this.replayPending();
@@ -283,13 +309,13 @@ export class CollabProvider {
         this.noteVersion(Number(payload.version));
         const id = String(payload.updateId);
         if (this.pending.delete(id)) void this.store.remove(id);
-        this.patch({ pending: this.pending.size, lastSavedAt: Date.now() });
+        this.patch({ pending: this.unsaved(), lastSavedAt: Date.now() });
         break;
       }
       case "document.rejected": {
         const id = String(payload.updateId);
         if (this.pending.delete(id)) void this.store.remove(id);
-        this.patch({ pending: this.pending.size, editsRejected: true, ...(payload.reason === "read_only" ? { role: "viewer" as const } : {}) });
+        this.patch({ pending: this.unsaved(), editsRejected: true, ...(payload.reason === "read_only" ? { role: "viewer" as const } : {}) });
         break;
       }
       case "access.updated":
@@ -356,12 +382,14 @@ export class CollabProvider {
   }
 
   destroy(): void {
+    this.flushNow(); // leaving the page within the batch window must not drop the last keystrokes
     this.destroyed = true;
     this.options.doc.off("update", this.onDocUpdate);
     this.awareness.off("update", this.onAwarenessUpdate);
     window.removeEventListener("online", this.onOnline);
     window.removeEventListener("offline", this.onOffline);
-    [this.flushTimer, this.presenceTimer, this.reconnectTimer].forEach((timer) => timer && clearTimeout(timer));
+    window.removeEventListener("pagehide", this.onPageHide);
+    [this.presenceTimer, this.reconnectTimer].forEach((timer) => timer && clearTimeout(timer));
     if (this.socket) {
       const socket = this.socket;
       this.socket = null;
