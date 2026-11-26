@@ -10,7 +10,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { useCreateDocument, useRecent, useSearch, useWorkspaces } from "@/lib/queries";
 import { useUi } from "@/stores/ui";
-import { useCurrentWorkspaceId } from "../../hooks/useCurrentWorkspace";
+import { useCurrentWorkspaceId } from "@/hooks/useCurrentWorkspaceId";
 
 const itemClass =
   "flex cursor-default select-none items-center gap-3 rounded-md px-3 py-2 text-sm text-foreground aria-selected:bg-muted [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-muted-foreground";

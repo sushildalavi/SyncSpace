@@ -13,7 +13,7 @@ import { useCreateDocument, useDocuments, useFavorites, useMyInvitations, useWor
 import { cn } from "@/lib/utils";
 import { useUi } from "@/stores/ui";
 import { UserMenu } from "./userMenu";
-import { useCurrentWorkspaceId } from "../../hooks/useCurrentWorkspace";
+import { useCurrentWorkspaceId } from "@/hooks/useCurrentWorkspaceId";
 
 function NavLink({ href, icon: Icon, children, badge, exact }: { href: string; icon: typeof Home; children: React.ReactNode; badge?: number; exact?: boolean }) {
   const pathname = usePathname();
