@@ -12,7 +12,7 @@ Full-stack TypeScript: Next.js · NestJS · PostgreSQL · Yjs · Redis · Better
 | Watch two browsers edit one document | [Demo walkthrough](#demo-walkthrough) |
 | See how permissions are enforced on live sockets | [`collaboration.service.ts`](apps/api/src/collaboration/collaboration.service.ts) · [tests](apps/api/test/collaboration.service.spec.ts) |
 | See how multi-server delivery works | [Architecture](docs/architecture/overview.md) · [ADR 0004](docs/adr/0004-stream-fanout.md) |
-| Numbers | [Benchmark](docs/benchmarks/collaboration.md): 280 clients on two API instances, 4,000 updates, 0 divergence, p95 ack ≈ 64 ms. [Fault injection](docs/benchmarks/fault-injection.md): no acknowledged edit lost through Redis, database and instance failures, including 90 s outages |
+| Numbers | [Benchmark](docs/benchmarks/collaboration.md): 280 clients on two API instances on one laptop, 4,000 updates per run, 0 divergence, p95 ack ≈ 80 ms. [Fault injection](docs/benchmarks/fault-injection.md): no acknowledged edit lost through Redis, database and instance failures, including 90 s outages |
 | What was wrong before, and what changed | [Baseline and outcome](docs/modernization/baseline.md) |
 
 ## Features

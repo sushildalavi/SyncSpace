@@ -14,14 +14,33 @@ a document must hold identical text). The run exits non-zero on any divergence, 
 Environment: Apple M3 laptop, Node 26, PostgreSQL 16 and Redis 7 in Docker, API and load generator on the same machine.
 These are single-machine numbers, so use them for relative comparison and regression detection, not capacity planning.
 
-## Results
+## Results (2026-11-25, commit `d43d692`)
 
-| Run | Clients | Updates | Connect p95 | Ack p50 / p95 / p99 | Propagation p50 / p95 / p99 | Acked | Diverged clients |
+Median of three runs, with the lowest and highest run in brackets. Times are in milliseconds.
+
+| Run | Clients | Ack p50 | Ack p95 | Propagation p50 | Propagation p95 | Acked | Diverged clients |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 4 docs × (5 writers + 20 readers), 40 ms interval | 100 | 2,000 | 55 ms | 2.6 / 8.0 / 12.8 ms | 3.4 / 9.4 / 14.8 ms | 2,000 / 2,000 | 0 |
-| 8 docs × (5 writers + 30 readers), 60 ms interval | 280 | 4,000 | 83 ms | 11.4 / 64.0 / 85.6 ms | 12.8 / 66.2 / 88.3 ms | 4,000 / 4,000 | 0 |
+| 4 docs × (5 writers + 20 readers), 40 ms interval | 100 | 4.7 (4.2–5.0) | 11 (10–82) | 5.5 (5.1–5.9) | 12 (12–91) | 6,000 / 6,000 | 0 |
+| 8 docs × (5 writers + 30 readers), 60 ms interval | 280 | 17.5 (17.4–20.4) | 80 (75–98) | 19.7 (19.5–22.6) | 85 (78–100) | 12,000 / 12,000 | 0 |
 
-Propagation counts every (update, reader) delivery: 40,000 and 120,000 samples respectively.
+Each run sends 2,000 or 4,000 updates. The 280-client run handled about 540 updates per second.
+
+### Cost of single-document sharing
+
+The same runs on the commit before sharing was added (`597e637`), alternating with the new code on the same machine:
+
+| Clients | Ack p50, before → after | Ack p95, before → after |
+| --- | --- | --- |
+| 100 | 3.4 → 4.7 | 14 → 11 (too noisy to compare) |
+| 280 | 15.4 → 17.5 | 72 → 80 |
+
+Typical (p50) acknowledgement is 1–2 ms slower, and p95 at 280 clients about 10% slower. Before each save the server now
+makes two more database queries, to check both workspace membership and direct shares. That is the likely cause; it was
+not isolated by profiling. Combining the checks into one query has not been tried.
+
+The machine was not idle (load average near 10 when the runs began), and single p95 values varied widely, so treat small
+differences with caution. Earlier results published here (p95 ≈ 64 ms at 280 clients) came from a separate session and
+are not comparable.
 
 ## Before vs. after
 
@@ -36,9 +55,9 @@ show (updates reaching only one instance, client-chosen versions, snapshot count
   (40 msg/s, close code `4429`) correctly disconnected those writers, and the run failed its own acked/convergence checks.
   The real editor batches to ~50 ms (≤ 20 msg/s), so this is the limiter working. It does mean the load test must stay
   under the limit to measure the data path.
-- Latency grows with offered load (p95 ack 8 ms → 64 ms going from ~500 to ~550 acked updates/s with 2.8× the readers).
+- Latency grows with load: median acknowledgement rises from about 5 ms with 100 clients to about 18 ms with 280.
   Each update is one PostgreSQL transaction (row-locked version bump + insert) followed by a stream append.
 
 ## Not done
 
-Fault injection now has its own run: [fault-injection.md](fault-injection.md). Long soak runs and multi-machine runs are still untested.
+Fault injection has its own runs: [fault-injection.md](fault-injection.md). Long soak runs and multi-machine runs are still untested.
