@@ -14,10 +14,10 @@
     "websockets",
     "typescript"
   ],
-  "homepage": "https://github.com/sushildalavi/SyncSpace#readme",
+  "homepage": "https://github.com/sushildalavi/syncspace#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/sushildalavi/SyncSpace.git"
+    "url": "git+https://github.com/sushildalavi/syncspace.git"
   },
   "author": "Sushil Ravindra Dalavi",
   "license": "MIT",

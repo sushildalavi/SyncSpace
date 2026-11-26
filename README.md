@@ -1,6 +1,6 @@
-# SyncSpace
+# syncspace
 
-[![CI](https://github.com/sushildalavi/SyncSpace/actions/workflows/ci.yml/badge.svg)](https://github.com/sushildalavi/SyncSpace/actions/workflows/ci.yml)
+[![CI](https://github.com/sushildalavi/syncspace/actions/workflows/ci.yml/badge.svg)](https://github.com/sushildalavi/syncspace/actions/workflows/ci.yml)
 
 A collaborative rich-text editor. Several people can write in the same document at once, keep typing through a lost
 connection, and control who can read or edit. It is a TypeScript monorepo: a Next.js web app and a NestJS API, with
@@ -54,8 +54,8 @@ sockets, with a periodic database check as a fallback.
 You need Docker with the Compose plugin.
 
 ```bash
-git clone https://github.com/sushildalavi/SyncSpace.git
-cd SyncSpace
+git clone https://github.com/sushildalavi/syncspace.git
+cd syncspace
 docker compose up -d --build
 ```
 
