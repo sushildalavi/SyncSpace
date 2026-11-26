@@ -21,6 +21,7 @@
     "url": "git+https://github.com/sushildalavi/SyncSpace.git"
   },
   "author": "Sushil Ravindra Dalavi",
+  "license": "MIT",
   "private": true,
   "packageManager": "pnpm@10.15.1",
   "scripts": {

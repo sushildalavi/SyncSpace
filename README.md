@@ -151,3 +151,7 @@ GitHub Actions runs lint, type checks, tests, builds, the browser suite and Dock
 - No public share links: a shared document needs a confirmed account with that email address.
 - Two-factor sign-in covers password sign-in. Google sign-in relies on the Google account's own protection.
 - Users migrated from the earlier version are imported as unconfirmed.
+
+## License
+
+[MIT](LICENSE)
