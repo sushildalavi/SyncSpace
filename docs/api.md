@@ -3,19 +3,25 @@
 ## REST
 
 Cookie session required unless marked public. State-changing requests must carry `Origin: <WEB_ORIGIN>`. Errors are
-`{ statusCode, message }`. People without access receive `404`, insufficient role `403`, last-owner violations `409`.
+`{ statusCode, message }`; validation errors add `issues`. People without access receive `404`, insufficient role `403`,
+last-owner violations `409`. Request body schemas are in
+[`packages/contracts`](../packages/contracts/src/index.ts).
+
+`/api/auth/*` is rate limited per client address: 100 requests a minute, with a limit of 3 per 10 seconds on sign-in,
+sign-up, password change and email change. Other routes have no general rate limit.
 
 | Method & path | Role | Notes |
 | --- | --- | --- |
-| `GET /health`, `GET /config` | public | liveness; `{ googleEnabled, requireEmailVerification }` |
+| `GET /health`, `GET /config` | public | `{ ok, postgres, redis }`, always `200`, so check `ok`; `{ googleEnabled, requireEmailVerification }` |
+| `GET /` | public | redirects to the web app |
 | `/api/auth/*` | public/session | Better Auth: sign-up/in/out, verification, reset, sessions, accounts, Google, email change, two-factor |
 | `GET /me`, `GET /me/security-events` | any | |
-| `GET /me/deletion`, `DELETE /me` `{ confirmEmail, password? }` | any | preview, then delete. `409` while the only owner of a shared workspace; accounts without a password need a sign-in from the last 10 minutes |
+| `GET /me/deletion`, `DELETE /me` `{ confirmEmail, password? }` | any | preview, then delete. `409` while the only owner of a shared workspace; accounts without a password need a sign-in from the last 10 minutes. `429` after 5 wrong passwords in 15 minutes |
 | `GET/POST /workspaces`, `GET/PATCH/DELETE /workspaces/:id` | member / owner | create is transactional |
 | `GET /workspaces/:id/members` | member | |
 | `PUT/DELETE /workspaces/:id/members/:userId` | owner (self-leave allowed) | last owner protected |
 | `GET/POST /workspaces/:id/invitations`, `DELETE …/:invitationId` | owner | emailed single-use link |
-| `GET /invitations`, `POST /invitations/:id/accept`, `POST /invitations/preview`, `POST /invitations/accept` | invitee | email must match |
+| `GET /invitations`, `POST /invitations/:id/accept`, `POST /invitations/preview` `{ token }`, `POST /invitations/accept` `{ token }` | invitee | accepting requires the invited email address; by id it must also be verified |
 | `GET/POST /workspaces/:id/documents` | member / editor+ | `?q=` filters by title |
 | `GET/PATCH/DELETE /documents/:id` | reader / writer / workspace editor+ | `workspaceRole` is `null` for a guest |
 | `GET/PUT /documents/:id/shares` `{ email, role }`, `DELETE …/:shareId` | workspace owner | share one document as viewer or editor. A guest also sees that document's version history and who edited it |
@@ -23,7 +29,9 @@ Cookie session required unless marked public. State-changing requests must carry
 | `PUT/DELETE /documents/:id/favorite`, `GET /documents/recent`, `GET /documents/favorites`, `GET /search?q=` | reader | |
 | `GET /documents/:id/history`, `GET /documents/:id/history/:version` | reader | read-only reconstruction |
 | `POST /documents/:id/restore` `{ version }` | writer | rewinds the content as a **new** version (history is never rewritten) and pushes it to open editors live |
-| `GET/PUT/DELETE /workspaces/:id/integrations/:provider`, `POST …/send` | member / owner / editor+ | webhook hosts are allow-listed |
+| `GET /workspaces/:id/integrations` | member | webhook URLs are returned masked |
+| `PUT/DELETE /workspaces/:id/integrations/:provider` | owner | `provider` is `slack` or `teams`; webhook hosts are allow-listed |
+| `POST /workspaces/:id/integrations/:provider/send` `{ title, summary, documentUrl }` | editor+ | posts to the saved webhook. The web app has no control that calls this |
 
 ## Collaboration WebSocket
 
@@ -52,9 +60,11 @@ Authentication is the session **cookie** (sent automatically; credentials in the
 | `access.updated` | `{ role }`, your role changed live |
 | `access.revoked` | `{ code, reason }`, followed by close |
 | `presence.sync` / `presence.state` / `presence.leave` | other collaborators (identity stamped by the server) |
+| `error` | `{ message }`, a message that could not be understood or handled. This one has no `payload` field |
 
 ### Close codes
 
 `4401` not signed in · `4403` origin not allowed · `4404` no such document / no access · `4410` access removed ·
-`4411` session revoked · `4429` rate limited · `1013` the server can't save or check right now, try again.
+`4411` session revoked · `4429` rate limited · `1013` the server can't save or check right now, try again ·
+`1001` server shutting down · `1011` unexpected server error.
 Any close not starting with `44`, and also `4429`, is treated by the client as transient: it reconnects and resends.

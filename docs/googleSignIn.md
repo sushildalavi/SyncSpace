@@ -42,13 +42,15 @@ The callback lives on the **API origin** (`API_BASE_URL`), not the web origin.
 # .env (never commit this file)
 API_BASE_URL=http://localhost:3001
 WEB_ORIGIN=http://localhost:3000
-GOOGLE_CLIENT_ID=1234567890-abc.apps.googleusercontent.com
-GOOGLE_CLIENT_SECRET=GOCSPX-...
-BETTER_AUTH_SECRET=$(openssl rand -base64 32)
+GOOGLE_CLIENT_ID=<client id>
+GOOGLE_CLIENT_SECRET=<client secret>
+BETTER_AUTH_SECRET=<output of: openssl rand -base64 32>
 ```
 
-With Docker: put the same values in a `.env` next to `docker-compose.yml`; compose forwards them. Restart the API
-(`docker compose up -d api`). Check `curl localhost:3001/config` returns `"googleEnabled": true`.
+With Docker: put these values in a `.env` next to `docker-compose.yml`. Compose forwards the two Google variables and
+`BETTER_AUTH_SECRET`; the URLs are already set in the Compose file. Recreate the API with `docker compose up -d api`.
+Without Docker, export the file and restart the API (see [Development](../README.md#development)).
+Check that `curl localhost:3001/config` returns `"googleEnabled": true`.
 
 ### Production notes
 
@@ -71,7 +73,7 @@ With Docker: put the same values in a `.env` next to `docker-compose.yml`; compo
 | Consent cancelled / expired state / tampered state | Friendly error page, no session created |
 | Disconnect Google when it's the only sign-in method | Refused |
 
-Linking and unlinking require a *fresh* session (signed in within the last day). Otherwise the user is asked to sign in again.
+Disconnecting Google requires a session that signed in within the last day. Otherwise the user is asked to sign in again.
 
 ## 4. What is and isn't verified
 

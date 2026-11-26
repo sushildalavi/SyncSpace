@@ -97,6 +97,7 @@ erDiagram
 | `workspace` | `owner_id` FK. Soft-archived with `archived_at`. |
 | `workspace_member` | `(workspace_id, user_id)` unique. Role enum `owner/editor/viewer`. Last-owner rules are enforced in a transaction that locks the owner rows. |
 | `workspace_invitation` | Stores only a SHA-256 of the emailed token. Partial unique index allows one live invitation per `(workspace, email)`. |
+| `workspace_integration` | One Slack or Teams webhook per `(workspace, provider)`. The URL is stored as given and only ever returned masked. |
 | `document` | `current_version` is the server-assigned counter and `snapshot_version` the last compaction point. Soft-deleted with `deleted_at`. |
 | `document_update` | Append-only Yjs updates (`bytea`). Unique `(document_id, version)` and `(document_id, update_id)` (the idempotency key). |
 | `document_snapshot` | Compacted Yjs state at `version`. Unique per `(document_id, version)`. |
@@ -109,9 +110,9 @@ erDiagram
 to a placeholder user (`deleted-user`, created by migration `0001`), so history stays intact without their name.
 Workspaces with no other members are deleted.
 
-**Why Yjs blobs live in PostgreSQL:** updates are small (typically < 1 KB), the log is bounded by snapshots, and a single
-transactional store gives atomic version assignment, idempotency and consistent access control for free. A separate
-blob store would add a failure mode without a measured need.
+**Why Yjs blobs live in PostgreSQL:** a single transactional store gives atomic version assignment, idempotency and
+access control in one place, and snapshots bound how much of the log a load has to read. A separate blob store would add
+a failure mode without a measured need. The cost is that the log grows with every edit, because nothing prunes it.
 
 ## Failure behaviour
 
@@ -120,7 +121,7 @@ blob store would add a failure mode without a measured need.
 | Browser goes offline | Status shows **Offline**. Edits keep applying locally and are queued in IndexedDB. On reconnect they replay idempotently. |
 | API instance crashes (`kill -9`) or a socket drops | Client reconnects with jittered backoff (longer after a `4429`), receives fresh state, and replays its unacknowledged backlog **as one merged update**. Tested. |
 | Instance frozen then resumed (GC pause, VM stall) | Its sockets are intact but it may have missed events. Same resync path as above. Tested. |
-| Redis unavailable, restarted or its stream wiped | Writes still persist to PostgreSQL. Publishes queue and are delivered when Redis returns. If events were destroyed, `sync.check` (every 10 s) shows clients they are behind and they resync, typically within ~20 s. `/health` reports `redis:false` meanwhile. Tested: [failure testing](performance.md#failure-testing). |
+| Redis unavailable, restarted or its stream wiped | Writes still persist to PostgreSQL. Publishes queue and are delivered when Redis returns. If events were destroyed, `sync.check` (every 10 s) shows clients they are behind and they resync, normally in about 20 s. `/health` reports `redis:false` meanwhile. Tested: [failure testing](performance.md#failure-testing). |
 | PostgreSQL unavailable, restarted or crashed | The API stays up. An update that can't be saved closes the socket with `1013`, so the client reconnects with backoff and resends everything unacknowledged. Nobody is reported as signed out; the web app shows **Can't reach SyncSpace** if it can't check the session. `/health` reports `postgres:false`. Tested. |
 | Duplicate delivery / retries | `(document_id, update_id)` is unique, so duplicates are acked without a new version. |
 | Two people edit at once | Yjs merges both. Versions are serialised by the document row lock. |
@@ -151,11 +152,11 @@ supported by Better Auth's adapter.
 
 ### Better Auth
 
-**Context.** Tokens in localStorage and in WebSocket URLs, no revocation, bcrypt, no OAuth.
+**Context.** The earlier MongoDB version kept tokens in `localStorage` and in WebSocket URLs, could not revoke them,
+hashed passwords with bcrypt and had no OAuth.
 **Decision.** Better Auth (database sessions, HttpOnly cookies, email verification/reset, Google social login, account linking,
 rate limiting) with the Drizzle adapter. It runs as an Express handler inside Nest (`toNodeHandler`, registered before the
 body parser), and Nest guards call `auth.api.getSession` on every request, so there is one session system and no parallel JWT code.
-Compatibility checked against Nest 11/Express 5, Node 22–26 and drizzle-orm 0.45.
 **Choices.** Argon2id (OWASP parameters) via `@node-rs/argon2`. Legacy bcrypt hashes are verified and upgraded on login.
 `disableImplicitLinking` so email equality never merges identities. Provider tokens are stripped by a database hook.
 **Not used.** The cookie cache (it would delay revocation).
@@ -163,6 +164,7 @@ Compatibility checked against Nest 11/Express 5, Node 22–26 and drizzle-orm 0.
 ### Redis Streams with XREAD
 
 A shared consumer group delivers each entry to a single consumer, so with multiple API instances only one would forward an
-update to its sockets. Each instance now reads the full stream with `XREAD` (no group). Document durability is in PostgreSQL,
-so the stream can be lossy, and reconnecting clients resync from the database. Streams are kept over pub/sub for bounded
-replay and visibility (`XLEN`, `XRANGE`).
+update to its sockets. Each instance therefore reads the full stream with `XREAD` (no group). Document durability is in
+PostgreSQL, so the stream can be lossy, and reconnecting clients resync from the database. A stream was chosen over
+pub/sub so that a reader can resume from its last entry after a dropped connection, and so the backlog can be inspected
+(`XLEN`, `XRANGE`). It is trimmed to about 20,000 entries.

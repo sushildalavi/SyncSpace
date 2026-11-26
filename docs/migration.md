@@ -14,14 +14,17 @@ against MongoDB** and never deletes source data.
 | `documentsnapshots` | *(not copied)* | Their version numbers referred to client-chosen versions and can't be mapped. The full update history is migrated instead and the new service snapshots on its own. |
 | Y.Text `body` | also Y.XmlFragment `default` | Plain-text documents get one extra update (`migration-richtext-v1`) that adds paragraphs for the new rich-text editor. The original `body` text is kept. Documents that are already rich text are untouched. |
 
-Each document migrates in its own transaction. Re-running is safe: existing rows are left alone.
+The whole run is one transaction, so a failure part way through leaves no copied rows behind. Re-running is safe:
+existing rows are left alone. Database schema migrations are applied before that transaction starts, including on a dry
+run.
 
 ## Verification
 
 After copying, every document is rebuilt from PostgreSQL and compared with the document rebuilt from MongoDB using
 the legacy loader. The report lists per-table counts (`source / migrated / skipped`), every issue, the number of
 documents compared and equal, and a SHA-256 checksum over all original update payloads on both sides. The CLI
-exits non-zero if any document differs.
+exits non-zero if any document differs; the copied data is already committed at that point. The checksum covers the
+updates copied in that run, so a repeat run that copies nothing has nothing to compare.
 
 ## Cutover
 
